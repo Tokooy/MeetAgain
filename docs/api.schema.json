@@ -1,0 +1,564 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meetagain.invalid/api.schema.json",
+  "title": "MeetAgain API contract draft — definitions selected by endpoint",
+  "$defs": {
+    "Movement": {
+      "type": "object",
+      "properties": {
+        "home_move_probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "away_move_probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "home_return_probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "home_move_probability",
+        "away_move_probability",
+        "home_return_probability"
+      ],
+      "additionalProperties": false
+    },
+    "EncounterRules": {
+      "type": "object",
+      "properties": {
+        "include_tick_zero": {
+          "type": "boolean"
+        },
+        "cross_tick_tolerance": {
+          "const": 0
+        }
+      },
+      "required": [
+        "include_tick_zero",
+        "cross_tick_tolerance"
+      ],
+      "additionalProperties": false
+    },
+    "SimulationRequest": {
+      "type": "object",
+      "properties": {
+        "agents": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 100
+        },
+        "ticks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "seed": {
+          "type": "string",
+          "pattern": "^[0-9]{1,20}$"
+        },
+        "movement": {
+          "$ref": "#/$defs/Movement"
+        },
+        "encounters": {
+          "$ref": "#/$defs/EncounterRules"
+        }
+      },
+      "required": [
+        "agents",
+        "ticks",
+        "seed",
+        "movement",
+        "encounters"
+      ],
+      "additionalProperties": false
+    },
+    "Position": {
+      "type": "object",
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "city_id": {
+          "type": "string",
+          "pattern": "^32(0[1-9]|1[0-3])00$"
+        }
+      },
+      "required": [
+        "tick",
+        "city_id"
+      ],
+      "additionalProperties": false
+    },
+    "AgentSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "home_city_id": {
+          "type": "string",
+          "pattern": "^32(0[1-9]|1[0-3])00$"
+        },
+        "initial_city_id": {
+          "type": "string",
+          "pattern": "^32(0[1-9]|1[0-3])00$"
+        },
+        "final_city_id": {
+          "type": "string",
+          "pattern": "^32(0[1-9]|1[0-3])00$"
+        },
+        "move_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "distance_km": {
+          "type": "number",
+          "minimum": 0
+        },
+        "visited_city_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^32(0[1-9]|1[0-3])00$"
+          }
+        },
+        "trajectory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Position"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "home_city_id",
+        "initial_city_id",
+        "final_city_id",
+        "move_count",
+        "distance_km",
+        "visited_city_ids",
+        "trajectory"
+      ],
+      "additionalProperties": false
+    },
+    "Summary": {
+      "type": "object",
+      "properties": {
+        "any_encounter": {
+          "type": "boolean"
+        },
+        "unique_encounter_pairs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "encounter_event_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "first_encounter_tick": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "all_agents_met": {
+          "type": "boolean"
+        },
+        "first_all_agents_tick": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "any_encounter",
+        "unique_encounter_pairs",
+        "encounter_event_count",
+        "first_encounter_tick",
+        "all_agents_met",
+        "first_all_agents_tick"
+      ],
+      "additionalProperties": false
+    },
+    "SimulationResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "graph_version": {
+          "type": "string"
+        },
+        "config": {
+          "$ref": "#/$defs/SimulationRequest"
+        },
+        "summary": {
+          "$ref": "#/$defs/Summary"
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentSummary"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "graph_version",
+        "config",
+        "summary",
+        "agents"
+      ],
+      "additionalProperties": false
+    },
+    "Encounter": {
+      "type": "object",
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "city_id": {
+          "type": "string",
+          "pattern": "^32(0[1-9]|1[0-3])00$"
+        },
+        "agent_ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "tick",
+        "city_id",
+        "agent_ids"
+      ],
+      "additionalProperties": false
+    },
+    "EncounterPage": {
+      "type": "object",
+      "properties": {
+        "simulation_id": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Encounter"
+          }
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "simulation_id",
+        "events",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "Geometry": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "Polygon"
+            },
+            "coordinates": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "minItems": 4
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "type",
+            "coordinates"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "MultiPolygon"
+            },
+            "coordinates": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "minItems": 4
+                },
+                "minItems": 1
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "type",
+            "coordinates"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "BoundaryFeature": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "Feature"
+        },
+        "properties": {
+          "type": "object",
+          "properties": {
+            "city_id": {
+              "type": "string",
+              "pattern": "^32(0[1-9]|1[0-3])00$"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city_id",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        }
+      },
+      "required": [
+        "type",
+        "properties",
+        "geometry"
+      ],
+      "additionalProperties": false
+    },
+    "Boundaries": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "FeatureCollection"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BoundaryFeature"
+          },
+          "minItems": 13,
+          "maxItems": 13
+        }
+      },
+      "required": [
+        "type",
+        "features"
+      ],
+      "additionalProperties": false
+    },
+    "GraphResponse": {
+      "type": "object",
+      "properties": {
+        "graph_version": {
+          "type": "string"
+        },
+        "coordinate_reference": {
+          "type": "string"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^32(0[1-9]|1[0-3])00$"
+              },
+              "name": {
+                "type": "string"
+              },
+              "center": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "center"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 13,
+          "maxItems": 13
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "pattern": "^32(0[1-9]|1[0-3])00$"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^32(0[1-9]|1[0-3])00$"
+              },
+              "distance_km": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "source",
+              "target",
+              "distance_km"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 23,
+          "maxItems": 23
+        },
+        "boundaries": {
+          "$ref": "#/$defs/Boundaries"
+        },
+        "provenance": {
+          "type": "object",
+          "properties": {
+            "boundary_source_url": {
+              "type": "string"
+            },
+            "boundary_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "road_model": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "boundary_source_url",
+            "boundary_sha256",
+            "road_model"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "graph_version",
+        "coordinate_reference",
+        "nodes",
+        "edges",
+        "boundaries",
+        "provenance"
+      ],
+      "additionalProperties": false
+    },
+    "HealthResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "ok"
+        },
+        "graph_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "graph_version"
+      ],
+      "additionalProperties": false
+    },
+    "ApiError": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "field": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "field"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
