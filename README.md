@@ -5,7 +5,7 @@ Work in the existing checkout; no additional worktree is needed.
 
 ## Status
 
-Module 1: scaffold. The executable currently prints its version and exits;
+Modules 1–2: scaffold and validated city road graph. The executable prints its version or graph and exits;
 there is no HTTP service yet. The frontend is an honest construction screen.
 
 ## Development
@@ -37,3 +37,16 @@ on port 8080 after the API module. No frontend artifacts are required by Cargo.
 4. API, after explicit contract confirmation.
 5. Interactive map and results.
 6. Documentation and end-to-end Docker verification.
+
+## Graph inspection
+
+```sh
+cargo run --locked -p meetagain -- graph
+docker build -t meetagain:module2 .
+docker run --rm meetagain:module2 graph
+```
+
+13 cities, 23 manual undirected edges; weights approximate center-to-center
+spherical distances. See [data provenance](backend/data/SOURCES.md) for the
+exact pinned source, historical boundary and coordinate limitations. No
+runtime download or credentials are required.
