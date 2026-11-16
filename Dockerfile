@@ -23,3 +23,5 @@ COPY --from=frontend-build /src/frontend/dist /app/static
 USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/app/meetagain"]
+
+CMD ["serve", "--static-dir", "/app/static"]

@@ -1,7 +1,6 @@
-# API contract — awaiting confirmation before module 4
+# API contract — confirmed
 
-No HTTP endpoint is implemented yet. Frontend implementation must wait for this
-contract's confirmation. [JSON Schemas](api.schema.json) define all request and
+Confirmed by the user before module 4. [JSON Schemas](api.schema.json) define all request and
 response shapes under `$defs`; select the named definition in the table.
 
 | Method | Path | Success | Request | Response schema |

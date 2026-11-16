@@ -15,6 +15,13 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Serve the JSON API and static frontend on one port.
+    Serve {
+        #[arg(long, default_value = "0.0.0.0:8080")]
+        address: std::net::SocketAddr,
+        #[arg(long, default_value = "frontend/dist")]
+        static_dir: std::path::PathBuf,
+    },
     /// Print the weighted undirected adjacency list.
     Graph,
     /// Run an offline simulation and write full JSON to stdout.
@@ -35,9 +42,21 @@ enum Command {
         include_tick_zero: bool,
     },
 }
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "meetagain=info,tower_http=info".into()),
+        )
+        .with_writer(std::io::stderr)
+        .init();
     let cli = Cli::parse();
     match cli.command {
+        Some(Command::Serve {
+            address,
+            static_dir,
+        }) => meetagain::api::serve(address, static_dir).await?,
         Some(Command::Graph) => {
             let graph = RoadGraph::jiangsu()?;
             println!(
