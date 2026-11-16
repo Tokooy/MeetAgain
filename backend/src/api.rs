@@ -7,7 +7,7 @@ use axum::{
     Json, Router,
     extract::{
         DefaultBodyLimit, Path, Query, State,
-        rejection::{JsonRejection, QueryRejection},
+        rejection::{JsonRejection, PathRejection, QueryRejection},
     },
     http::{StatusCode, header},
     response::{IntoResponse, Response},
@@ -255,9 +255,10 @@ struct PageQuery {
 }
 async fn encounters(
     State(state): State<Arc<ApiState>>,
-    Path(id): Path<String>,
+    path: Result<Path<String>, PathRejection>,
     query: Result<Query<PageQuery>, QueryRejection>,
 ) -> Result<Json<Value>, ApiError> {
+    let Path(id) = path.map_err(|_| ApiError::invalid("Invalid simulation ID", Some("id")))?;
     let Query(query) = query.map_err(|_| ApiError::invalid("Invalid pagination query", None))?;
     let limit = query.limit.unwrap_or(100);
     if !(1..=1000).contains(&limit) {
@@ -302,11 +303,27 @@ pub async fn serve(
     let listener = tokio::net::TcpListener::bind(address).await?;
     tracing::info!(%address,"MeetAgain listening");
     axum::serve(listener, router(state, static_dir))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
+        .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut terminate) => {
+                tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+            }
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 #[cfg(test)]

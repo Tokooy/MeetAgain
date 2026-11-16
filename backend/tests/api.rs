@@ -254,3 +254,10 @@ async fn serves_static_spa_without_api_fallback_leak() {
     assert_eq!(send(app, "GET", "/api/unknown", None).await.0, 404);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[tokio::test]
+async fn invalid_utf8_id_keeps_the_api_error_envelope() {
+    let (status, body) = send(app(), "GET", "/api/simulations/%FF/encounters", None).await;
+    assert_eq!(status, 422);
+    assert_eq!(body["error"]["field"], "id");
+}

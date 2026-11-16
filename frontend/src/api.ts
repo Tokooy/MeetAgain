@@ -29,25 +29,34 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
   return response.json() as Promise<T>;
 }
-export const getGraph = () => request<Graph>("/api/graph");
+export const getGraph = (signal?: AbortSignal) =>
+  request<Graph>("/api/graph", { signal });
 export const runSimulation = (config: Config) =>
   request<Simulation>("/api/simulations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(config),
   });
-export const getEncounters = (id: string, cursor?: string | null) => {
+export const getEncounters = (
+  id: string,
+  cursor?: string | null,
+  signal?: AbortSignal,
+) => {
   const query = new URLSearchParams({ limit: "1000" });
   if (cursor) query.set("cursor", cursor);
   return request<EncounterPage>(
     `/api/simulations/${encodeURIComponent(id)}/encounters?${query}`,
+    { signal },
   );
 };
-export async function getAllEncounters(id: string): Promise<Encounter[]> {
+export async function getAllEncounters(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Encounter[]> {
   const events: Encounter[] = [];
   let cursor: string | null = null;
   do {
-    const page = await getEncounters(id, cursor);
+    const page = await getEncounters(id, cursor, signal);
     events.push(...page.events);
     cursor = page.next_cursor;
   } while (cursor !== null);

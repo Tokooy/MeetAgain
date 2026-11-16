@@ -16,7 +16,7 @@ export default function App() {
   const queryClient = useQueryClient();
   const graph = useQuery({
     queryKey: ["graph"],
-    queryFn: getGraph,
+    queryFn: ({ signal }) => getGraph(signal),
     staleTime: Infinity,
     retry: 1,
   });
@@ -27,7 +27,7 @@ export default function App() {
   const result = simulation.data;
   const events = useQuery({
     queryKey: ["encounters", result?.id],
-    queryFn: () => getAllEncounters(result!.id),
+    queryFn: ({ signal }) => getAllEncounters(result!.id, signal),
     enabled: !!result,
     staleTime: Infinity,
     retry: false,

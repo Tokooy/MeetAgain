@@ -95,13 +95,10 @@ byte-for-byte (`cmp`). Output SHA-256:
 `0330f8421c7f231e9dc51c46759da3a867023edd676d8ee6cd0f6a33351c0ad6`.
 These are finite-run results, not a claim that all humans eventually reunite.
 
-## Next gate
+## API gate history
 
-Confirm docs/API.md and docs/api.schema.json before module 4. No HTTP service,
-MapLibre interaction, theme switch, chart, or browser end-to-end test has been
-implemented or claimed yet. Module 5 supplies the complete frontend; module 6
-verifies final single-port HTTP behavior in Docker. The current image is an
-offline graph/simulation tool plus construction-screen static assets.
+The user confirmed the final API contract before module 4. The following
+sections record implementation and final container checks after confirmation.
 
 ## Push #4 — ca548e0
 
@@ -166,3 +163,63 @@ of exhaustive accessibility certification.
 docker build --secret id=proxy_ca,src=/etc/ssl/certs/ca-certificates.crt -t meetagain:module5 .
 docker run --rm -p 8080:8080 meetagain:module5
 ```
+
+## Push #6 — see git log
+
+`chore: document workflow and verify final single-process Docker application`
+
+Files: .dockerignore, .node-version, README.md, backend/src/api.rs,
+backend/tests/api.rs, frontend/package{,-lock}.json,
+frontend/src/{App.tsx,api.ts}, frontend/e2e/api.spec.ts,
+docs/DELIVERY.md, docs/screenshots/{desktop-dark,desktop-light,mobile}.png.
+
+Final documentation, pinned local Node version, AbortSignal-aware frontend
+requests, SIGTERM/SIGINT graceful shutdown, JSON error envelope for invalid
+UTF-8 path IDs, Ajv contract validation on real HTTP responses, exclusion of
+browser test artifacts from Docker context. Actual final-container screenshots
+replace intermediate captures. No environment configuration was published.
+
+Checks before push:
+
+- cargo build/test passed: 20 tests, none failed/skipped; fmt and Clippy
+  `--all-targets -- -D warnings` passed.
+- TypeScript strict `tsc --noEmit`, Vite production build and frontend Prettier
+  check passed. Vite reports the expected lazy MapLibre vendor chunk >500 KiB
+  and ignored third-party `use client` directives; these are build warnings,
+  not failed checks. MapLibre JS and module worker are served locally.
+- Three-stage final Docker build passed, using the optional CA secret with TLS
+  verification preserved. One temporary crates download proxy failure cleared
+  after a successful destination check and rebuild.
+- Four Playwright tests passed against the final Docker image, including Ajv
+  validation of GraphResponse, HealthResponse, SimulationResponse, EncounterPage
+  and ApiError, plus the three browser flows from module 5. Axe found no WCAG
+  A/AA violations in the tested states. No fixture API is used for the main
+  simulation; only the explicit 429 error scenario intercepts a request.
+- Runtime verified with non-root UID/GID 65532, read-only root filesystem,
+  dropped capabilities and no-new-privileges. One application process
+  (`meetagain`, PID 1), one exposed/published port (8080); proc inspection adds
+  only the temporary inspection shell. Docker top was unavailable due to this
+  managed runtime's cgroup enumeration, so process verification used /proc.
+- Final image size 82,530,973 bytes. Offline release JSON still matches host
+  debug JSON byte-for-byte. SHA-256:
+  `0330f8421c7f231e9dc51c46759da3a867023edd676d8ee6cd0f6a33351c0ad6`.
+- Docker stop completed within its 5-second timeout with exit code 0. Restart
+  restored healthy HTTP/static service; old in-memory run returned JSON 404,
+  matching the documented cache lifecycle.
+
+```sh
+docker build --platform=linux/amd64 \
+  --secret id=proxy_ca,src=/etc/ssl/certs/ca-certificates.crt \
+  -t meetagain:latest .
+docker run --rm --name meetagain -p 8080:8080 meetagain:latest
+```
+
+For local development, build frontend then `cargo run --locked -- serve
+--address 127.0.0.1:8080 --static-dir frontend/dist`. Use `bash scripts/check.sh`,
+`npm --prefix frontend run format:check`, then (with service running)
+`npm --prefix frontend run test:e2e`.
+
+All six modules are implemented. Geographic data limitations remain those
+explicitly documented in backend/data/SOURCES.md and README; no current official
+boundary accuracy, real navigation routing or empirical human behavior is
+claimed. No new-task snapshot restoration or environment publication is claimed.
