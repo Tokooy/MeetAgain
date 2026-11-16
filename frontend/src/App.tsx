@@ -1,0 +1,235 @@
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowUpRight, Check, Compass, Moon, Sun, X, Info } from "lucide-react";
+import { getAllEncounters, getGraph, runSimulation } from "./api";
+import { useView } from "./store";
+import { Controls } from "./components/Controls";
+import { Playback } from "./components/Playback";
+import { Results } from "./components/Results";
+import type { Config } from "./types";
+const CityMap = lazy(() => import("./components/CityMap"));
+
+export default function App() {
+  const { theme, toggleTheme, resetView } = useView();
+  const [showAbout, setShowAbout] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const queryClient = useQueryClient();
+  const graph = useQuery({
+    queryKey: ["graph"],
+    queryFn: getGraph,
+    staleTime: Infinity,
+    retry: 1,
+  });
+  const simulation = useMutation({
+    mutationFn: runSimulation,
+    onSuccess: () => resetView(),
+  });
+  const result = simulation.data;
+  const events = useQuery({
+    queryKey: ["encounters", result?.id],
+    queryFn: () => getAllEncounters(result!.id),
+    enabled: !!result,
+    staleTime: Infinity,
+    retry: false,
+  });
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+  useEffect(() => {
+    if (showAbout) dialog.current?.showModal();
+    else dialog.current?.close();
+  }, [showAbout]);
+  function reset() {
+    simulation.reset();
+    queryClient.removeQueries({ queryKey: ["encounters"] });
+    resetView();
+  }
+  function start(config: Config) {
+    resetView();
+    simulation.mutate(config);
+  }
+  return (
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="brand">
+          <span className="brand-symbol" aria-hidden="true">
+            <svg viewBox="0 0 32 32">
+              <path d="M5 24V8l11 13L27 8v16" />
+              <circle cx="16" cy="21" r="3" />
+            </svg>
+          </span>
+          <span>
+            MeetAgain<small>再 · 相逢</small>
+          </span>
+        </div>
+        <div className="header-center">
+          <span>SIMULATION LAB</span>
+          <i />
+          江苏城市漫游实验
+        </div>
+        <div className="header-actions">
+          <button className="about-button" onClick={() => setShowAbout(true)}>
+            <Info size={14} />
+            <span>关于模型</span>
+          </button>
+          <span className="header-divider" />
+          <button
+            className="icon-button"
+            aria-label={theme === "dark" ? "切换浅色主题" : "切换深色主题"}
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+        </div>
+      </header>
+      <div className="intro-bar">
+        <div>
+          <p className="eyebrow">AN EXPERIMENT IN CHANCE</p>
+          <h1>
+            各自生活，还会再相逢吗<span>？</span>
+          </h1>
+          <p className="intro-subtitle">
+            让独立的轨迹，回答一个关于重逢的问题。
+          </p>
+        </div>
+        <div className="model-metrics">
+          <div>
+            <b>{graph.data?.nodes.length ?? "—"}</b>
+            <span>地级城市</span>
+          </div>
+          <i />
+          <div>
+            <b>{graph.data?.edges.length ?? "—"}</b>
+            <span>道路连接</span>
+          </div>
+          <span className="model-tag">
+            <Compass size={13} />
+            独立个体 · 离散时间
+          </span>
+        </div>
+      </div>
+      {simulation.error && (
+        <div className="global-error" role="alert">
+          {simulation.error.message}
+          <button
+            aria-label="关闭错误提示"
+            className="icon-button"
+            onClick={() => simulation.reset()}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      <main className="workspace">
+        <Controls
+          busy={simulation.isPending}
+          ready={!!graph.data}
+          onStart={start}
+          onReset={reset}
+        />
+        <section className="map-panel" aria-label="城市地图与回放">
+          <div className="map-stage">
+            {graph.data ? (
+              <Suspense
+                fallback={<div className="map-loading">正在展开江苏地图…</div>}
+              >
+                <CityMap graph={graph.data} result={result} />
+              </Suspense>
+            ) : (
+              <div className="map-loading">
+                {graph.error ? (
+                  <>
+                    <p>地图数据读取失败，请检查服务是否正常。</p>
+                    <button
+                      className="text-button"
+                      onClick={() => void graph.refetch()}
+                    >
+                      重试
+                    </button>
+                  </>
+                ) : (
+                  "正在读取城市网络…"
+                )}
+              </div>
+            )}
+            {simulation.isPending && (
+              <div className="simulation-progress" role="status">
+                正在推演各自的旅程…
+              </div>
+            )}
+          </div>
+          <Playback ticks={result?.config.ticks ?? 0} enabled={!!result} />
+        </section>
+        <Results
+          result={result}
+          graph={graph.data}
+          events={events.data ?? []}
+          loading={!!result && events.isPending}
+          error={events.error}
+          onRetry={() => void events.refetch()}
+        />
+      </main>
+      <footer className="app-footer">
+        <span>
+          <span className={`status-dot ${graph.data ? "online" : ""}`} />
+          {graph.data ? "城市网络已就绪" : "正在连接引擎"}
+        </span>
+        <span>不联络 · 不追随 · 偶然相遇</span>
+        <span>MEETAGAIN / MODEL 01</span>
+      </footer>
+      <dialog
+        ref={dialog}
+        className="about-dialog"
+        onCancel={() => setShowAbout(false)}
+        onClick={(e) => {
+          if (e.target === dialog.current) setShowAbout(false);
+        }}
+      >
+        <button
+          className="icon-button dialog-close"
+          aria-label="关闭模型说明"
+          onClick={() => setShowAbout(false)}
+        >
+          <X size={18} />
+        </button>
+        <p className="eyebrow">ABOUT THE MODEL</p>
+        <h2>一次关于偶然的实验</h2>
+        <p>
+          每个人随机落在一座城市，并把那里作为家。在家时更少出发，在外时有一定概率沿距离最短路径返乡。其余出行偏向距离较近的相邻城市。彼此不共享位置，也不相约。
+        </p>
+        <ul>
+          <li>
+            <Check size={14} />
+            同一步在同一座城市，记录一次相遇。
+          </li>
+          <li>
+            <Check size={14} />
+            边权为中心球面距离近似值，不是真实公路里程。
+          </li>
+          <li>
+            <Check size={14} />
+            一步最多移动一条边，不表示固定小时或天数。
+          </li>
+        </ul>
+        <p>
+          历史简化边界的坐标基准未注明，因此只使用自身边界，不叠加外部底图。同城个体点位略有偏移以方便区分，不代表真实街道位置。
+        </p>
+        <p>
+          有限模拟中的结果不等于现实预测。“至少一对相遇”和“全员同时相聚”会分别报告。事件缓存保留
+          15 分钟、最多 4 次模拟，建议及时导出。
+        </p>
+        <a
+          href={
+            graph.data?.provenance.boundary_source_url ??
+            "https://github.com/longwosion/geojson-map-china"
+          }
+          target="_blank"
+          rel="noreferrer"
+        >
+          查看边界数据来源
+          <ArrowUpRight size={14} />
+        </a>
+      </dialog>
+    </div>
+  );
+}
