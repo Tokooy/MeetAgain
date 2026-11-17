@@ -70,6 +70,7 @@ function recolor(map: LibreMap, theme: "dark" | "light", cities: City[]) {
       );
   map.setPaintProperty("cities", "circle-color", p.node);
   map.setPaintProperty("trail", "line-color", p.trail);
+  map.setPaintProperty("residence", "circle-stroke-color", p.node);
   map.setPaintProperty(
     "agents",
     "circle-color",
@@ -251,6 +252,18 @@ export default function CityMap({ graph, result }: Props) {
           source: "cities",
           paint: { "circle-radius": 3, "circle-color": "#a9c6c9" },
         });
+        instance.addSource("residence", { type: "geojson", data: empty });
+        instance.addLayer({
+          id: "residence",
+          type: "circle",
+          source: "residence",
+          paint: {
+            "circle-radius": 7,
+            "circle-opacity": 0,
+            "circle-stroke-width": 2,
+            "circle-stroke-color": "#365b55",
+          },
+        });
         instance.addSource("agents", { type: "geojson", data: empty });
         instance.addLayer({
           id: "agent-halos",
@@ -373,6 +386,22 @@ export default function CityMap({ graph, result }: Props) {
     (instance.getSource("agents") as GeoJSONSource).setData(features);
 
     const agent = result?.agents.find((a) => a.id === selectedAgent);
+    const residence: FeatureCollection<Point> = {
+      type: "FeatureCollection",
+      features: agent
+        ? [
+            {
+              type: "Feature",
+              properties: {},
+              geometry: {
+                type: "Point",
+                coordinates: agent.residence_coordinates,
+              },
+            },
+          ]
+        : [],
+    };
+    (instance.getSource("residence") as GeoJSONSource).setData(residence);
     const trail: FeatureCollection<LineString> = {
       type: "FeatureCollection",
       features: [],

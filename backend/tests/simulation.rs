@@ -214,6 +214,53 @@ fn chosen_hometowns_and_graduation_cities_apply_on_days_zero_and_one() {
 }
 
 #[test]
+fn workdays_return_to_fixed_graduation_home_and_stay_inside_fifteen_km() {
+    let graph = RoadGraph::bundled().unwrap();
+    let mut c = config();
+    c.agents = 2;
+    c.ticks = 20;
+    c.start_date = Some("2027-01-28".into());
+    c.participants = vec![
+        ParticipantCities {
+            home_city_id: Some("320100".into()),
+            graduation_city_id: Some("321100".into()),
+        },
+        ParticipantCities {
+            home_city_id: Some("321100".into()),
+            graduation_city_id: Some("320100".into()),
+        },
+    ];
+    c.movement.away_move_probability = 1.0;
+    c.movement.home_return_probability = 1.0;
+    let run = simulate(&graph, &c).unwrap();
+    for agent in &run.agents {
+        assert_eq!(agent.residence_city_id, agent.trajectory[1].city_id);
+        assert_eq!(
+            agent.residence_coordinates,
+            agent.trajectory[1].street.coordinates
+        );
+        assert_eq!(
+            agent.trajectory[2].city_id, agent.home_city_id,
+            "Saturday trip home"
+        );
+        assert_eq!(
+            agent.trajectory[8].city_id, agent.home_city_id,
+            "Spring Festival holiday"
+        );
+        // Jan 31 is a Sunday makeup workday. Feb 14 is another.
+        for day in [3, 4, 5, 6, 7, 17, 18, 19, 20] {
+            let sample = &agent.trajectory[day];
+            assert_eq!(sample.city_id, agent.residence_city_id);
+            let distance = Haversine.distance(
+                Point::from(agent.residence_coordinates),
+                Point::from(sample.street.coordinates),
+            );
+            assert!(distance < 15_000.0, "day {day}: {distance} m");
+        }
+    }
+}
+
+#[test]
 fn invalid_parameters_fail_before_simulation() {
     let mut cases = Vec::new();
     for n in [0, 1, 101, u32::MAX] {
@@ -221,7 +268,7 @@ fn invalid_parameters_fail_before_simulation() {
         c.agents = n;
         cases.push(c);
     }
-    for ticks in [0, 5301, u32::MAX] {
+    for ticks in [0, 10_959, u32::MAX] {
         let mut c = config();
         c.ticks = ticks;
         cases.push(c);

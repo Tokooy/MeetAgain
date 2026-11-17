@@ -98,6 +98,11 @@ test("map, simulation, playback, filtering, download and reset work through real
   await expect(page.getByText("个体 01 的旅程")).toBeVisible();
   await page.getByLabel("当前天数", { exact: true }).fill("100");
   await expect(page.getByLabel("当前天数", { exact: true })).toHaveValue("100");
+  await expect(page.locator("time.playback-date")).toHaveAttribute(
+    "datetime",
+    "2027-02-24",
+  );
+  await expect(page.getByRole("button", { name: "查看定居点" })).toBeVisible();
   const downloadEvent = page.waitForEvent("download");
   await page.getByRole("button", { name: "完整结果", exact: true }).click();
   const download = await downloadEvent;
@@ -167,7 +172,7 @@ test("mobile layout collapses, respects reduced motion and has no horizontal ove
   ).not.toHaveAttribute("open");
   await page.getByText("实验设置", { exact: true }).click();
   await page.getByLabel("同行人数", { exact: true }).fill("4");
-  await page.getByLabel("观察时长", { exact: true }).fill("5300");
+  await page.getByLabel("观察时长", { exact: true }).fill("10958");
 
   await page.getByLabel("所有人从同一座家乡城市出发").check();
   await page.getByLabel("共同家乡").selectOption("321100");
@@ -181,7 +186,7 @@ test("mobile layout collapses, respects reduced motion and has no horizontal ove
   const result = await response.json();
   expect(result.config).not.toHaveProperty("seed");
   expect(result.config).toMatchObject({
-    ticks: 5300,
+    ticks: 10958,
     same_hometown: true,
     start_date: "2027-01-01",
   });
@@ -191,8 +196,10 @@ test("mobile layout collapses, respects reduced motion and has no horizontal ove
   expect(result.agents[2].trajectory[1].city_id).toBe("320100");
   await expect(page.getByLabel("当前天数", { exact: true })).toHaveAttribute(
     "max",
-    "5300",
+    "10958",
   );
+  await page.getByLabel("当前天数").fill("10958");
+  await expect(page.locator("time.playback-date")).toHaveText("2057-01-01");
   await page.getByText("观察结果", { exact: true }).click();
   await expect(page.getByTestId("pair-count")).toBeVisible();
   expect(

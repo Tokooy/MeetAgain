@@ -3,6 +3,7 @@ use crate::{
     festival,
     graph::RoadGraph,
     streets::{StreetPoint, distance_m},
+    workday::is_workday,
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -12,6 +13,9 @@ use thiserror::Error;
 
 /// Bounds the worst-case pair events before allocating trajectories/events.
 pub const MAX_PAIR_CHECKS: u64 = 500_000;
+pub const MAX_DAYS: u32 = 10_958;
+const WORKDAY_RADIUS_M: f64 = 15_000.0;
+const WORKDAY_SAMPLE_ATTEMPTS: usize = 32;
 const ENCOUNTER_RADIUS_M: f64 = 50.0;
 // Keep the city decision stream separate from street sampling.
 const STREET_RNG_MASK: u64 = 0x4d45_4554_524f_4144;
@@ -85,8 +89,8 @@ impl SimulationConfig {
         if !(2..=100).contains(&self.agents) {
             return Err(invalid("agents", "must be between 2 and 100"));
         }
-        if !(1..=5300).contains(&self.ticks) {
-            return Err(invalid("ticks", "must be between 1 and 5300"));
+        if !(1..=MAX_DAYS).contains(&self.ticks) {
+            return Err(invalid("ticks", "must be between 1 and 10958"));
         }
         if !self.participants.is_empty() && self.participants.len() != self.agents as usize {
             return Err(invalid(
@@ -159,6 +163,8 @@ pub struct AgentSummary {
     pub home_city_id: String,
     pub initial_city_id: String,
     pub graduation_city_id: Option<String>,
+    pub residence_city_id: String,
+    pub residence_coordinates: [f64; 2],
     pub final_city_id: String,
     pub move_count: u32,
     pub distance_km: f64,
@@ -334,6 +340,8 @@ pub fn simulate(
                 graduation_city_id: choice
                     .after_graduation
                     .map(|index| graph.cities[index].id.clone()),
+                residence_city_id: city.clone(),
+                residence_coordinates: [0.0; 2],
                 final_city_id: city.clone(),
                 move_count: 0,
                 distance_km: 0.0,
@@ -342,12 +350,14 @@ pub fn simulate(
             }
         })
         .collect();
+    let mut residences: Vec<(usize, StreetPoint)> = Vec::with_capacity(agents.len());
     let mut events = Vec::new();
     let mut first_all = None;
     for tick in 0..=config.ticks {
         let mut movement = config.movement.clone();
-        if let Some(start) = start {
-            let date = start + chrono::Days::new(u64::from(tick));
+        let date = start.map(|start| start + chrono::Days::new(u64::from(tick)));
+        let local_day = tick > 1 && date.is_some_and(is_workday);
+        if let Some(date) = date {
             movement.home_return_probability =
                 festival::return_probability(date, movement.home_return_probability);
         }
@@ -359,12 +369,16 @@ pub fn simulate(
                 } else {
                     None
                 };
-                let next = relocation.unwrap_or_else(|| {
-                    destination(graph, current[i], homes[i], &movement, &mut rng)
-                });
+                let next = if local_day {
+                    residences[i].0
+                } else {
+                    relocation.unwrap_or_else(|| {
+                        destination(graph, current[i], homes[i], &movement, &mut rng)
+                    })
+                };
                 if next != current[i] {
                     agent.move_count += 1;
-                    agent.distance_km += if relocation.is_some() {
+                    agent.distance_km += if local_day || relocation.is_some() {
                         graph.relocation_distance(current[i], next)
                     } else {
                         graph
@@ -381,10 +395,26 @@ pub fn simulate(
                     }
                 }
             }
+            let street = if local_day {
+                let home = &residences[i].1;
+                (0..WORKDAY_SAMPLE_ATTEMPTS)
+                    .map(|_| graph.sample_street(current[i], &mut street_rng))
+                    .find(|position| {
+                        distance_m(position.coordinates, home.coordinates) < WORKDAY_RADIUS_M
+                    })
+                    .unwrap_or_else(|| home.clone())
+            } else {
+                graph.sample_street(current[i], &mut street_rng)
+            };
+            if tick == 1 {
+                agent.residence_city_id = agent.final_city_id.clone();
+                agent.residence_coordinates = street.coordinates;
+                residences.push((current[i], street.clone()));
+            }
             agent.trajectory.push(Position {
                 tick,
                 city_id: agent.final_city_id.clone(),
-                street: graph.sample_street(current[i], &mut street_rng),
+                street,
             });
         }
         if tick > 0 || config.encounters.include_tick_zero {

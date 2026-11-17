@@ -115,7 +115,9 @@ curl -fsS --compressed http://127.0.0.1:8080/api/map/roads/320100 -o nanjing-str
 
 勾选「所有人从同一座家乡城市出发」后，可选共同家乡，或让系统随机抽取。每个人仍可单独设置毕业去向。
 
-网页用「分开日期」作为旅程编号，默认为 2026-11-16，可选 1901–2099 年内的模拟区间。正月初一由农历换算得到。节前 21 天逐日提高外地出发后沿最短路线返乡的概率，初一到初七保持最高值（例如平日 60% 升至 90%），节后 7 天内逐日降回平日值。CLI 可用 `--start-date YYYY-MM-DD` 设置分开日期，用 `--same-hometown` 选择共同家乡。
+第 1 天的道路坐标固定为毕业后定居点。第 2 天起，工作日只在定居城市采样道路位置，距定居点严格小于 15 公里（球面直线距离）。休息日仍可换城；如休假期间离开定居城市，下一个工作日开始前返回定居城市。2026、2027 年工作日依据[2026 年](https://www.beijing.gov.cn/cs/gncs/zcwj/202603/t20260327_4568275.html)和[2027 年](https://www.dxh.gov.cn/ZWGK/zc_zwgk/ZFWJ/TZGG/202611/t20261106_2875104.shtml)公布的放假调休安排。其他年份采用周一至周五、春节初一到初七休息的简化日历。只提供旧版 `seed` 的运行缺少日期，继续使用无日历的出行规则。
+
+网页回放同时显示模拟天数和公历日期。网页用「分开日期」作为旅程编号，默认为 2026-11-16，可选 1901–2099 年内的模拟区间。正月初一由农历换算得到。休息日出发时，节前 21 天逐日提高外地出发后沿最短路线返乡的概率，初一到初七保持最高值（例如平日 60% 升至 90%），节后 7 天内逐日降回平日值。CLI 可用 `--start-date YYYY-MM-DD` 设置分开日期，用 `--same-hometown` 选择共同家乡。
 
 默认模拟在南京、镇江、扬州之间使用三条加权无向连接。地图上的实线来自 OSM 道路，虚线表示模拟中的城市连接。换城概率仍按城市连接计算，距离权重为城市中心间球面距离。毕业迁移可直达选定城市，统计距离用最短城市路径，沿途不记录相遇。
 
@@ -155,8 +157,8 @@ curl -fsS -X POST http://127.0.0.1:8080/api/simulations \
   -d '{"agents":2,"ticks":365,"start_date":"2026-11-16","participants":[{"home_city_id":"320100","graduation_city_id":"321100"},{"home_city_id":"321000","graduation_city_id":"320100"}],"movement":{"home_move_probability":0.1,"away_move_probability":0.25,"home_return_probability":0.6},"encounters":{"include_tick_zero":false,"cross_tick_tolerance":0}}'
 ```
 
-拒绝未知字段；`same_hometown` 和 `participants` 可省略。非空 `participants` 的条目数必须等于人数。`start_date` 和旧版 `seed` 至少提供一项。N 为 2–100，ticks 为 1–5300（模拟天数），且最坏成对检查数
-`N * (N - 1) / 2 * (ticks + include_tick_zero)` 不超过 500,000。观察 5,300 天时，最多可选择 14 人。界面中的「分开日期」对应 API 的 `start_date`。相同的日期和设置可以重现家乡、每日轨迹及相遇结果。超限返回错误，不截断结果。
+拒绝未知字段；`same_hometown` 和 `participants` 可省略。非空 `participants` 的条目数必须等于人数。`start_date` 和旧版 `seed` 至少提供一项。N 为 2–100，ticks 为 1–10,958（模拟天数），且最坏成对检查数
+`N * (N - 1) / 2 * (ticks + include_tick_zero)` 不超过 500,000。观察 10,958 天（约 30 年）时，最多可选择 10 人。界面中的「分开日期」对应 API 的 `start_date`。相同的日期和设置可以重现家乡、每日轨迹及相遇结果。超限返回错误，不截断结果。
 
 单次模拟请求体最多 16 KiB；一次只执行一个模拟任务，并发请求返回 JSON 429。结果缓存在内存中，15 分钟过期，最多保留 4 次，先进先出淘汰；重启丢失。前端提供轨迹和完整结果下载，并提示缓存过期。完整形状及错误码见 [API 契约](docs/API.md) 和 [JSON Schema](docs/api.schema.json)。
 

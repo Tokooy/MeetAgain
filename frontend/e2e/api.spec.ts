@@ -36,7 +36,7 @@ test("real HTTP responses conform to the confirmed JSON schemas", async ({
   expect((await request.get("/api/map/roads/320400")).status()).toBe(404);
   const config = {
     agents: 2,
-    ticks: 5300,
+    ticks: 10958,
     seed: "20261116",
     participants: [
       { home_city_id: "320100", graduation_city_id: "321100" },
@@ -56,7 +56,11 @@ test("real HTTP responses conform to the confirmed JSON schemas", async ({
   conforms("SimulationResponse", result);
   expect(result.agents[0].trajectory[1].city_id).toBe("321100");
   expect(result.agents[1].trajectory[1].city_id).toBe("320100");
-  expect(result.agents[0].trajectory.at(-1).tick).toBe(5300);
+  expect(result.agents[0].residence_city_id).toBe("321100");
+  expect(result.agents[0].residence_coordinates).toEqual(
+    result.agents[0].trajectory[1].coordinates,
+  );
+  expect(result.agents[0].trajectory.at(-1).tick).toBe(10958);
   let cursor: string | null = null;
   let count = 0;
   do {
@@ -85,7 +89,7 @@ test("real HTTP responses conform to the confirmed JSON schemas", async ({
   expect(bad.status()).toBe(422);
   conforms("ApiError", await bad.json());
   const tooLong = await request.post("/api/simulations", {
-    data: { ...config, ticks: 5301 },
+    data: { ...config, ticks: 10959 },
   });
   expect(tooLong.status()).toBe(422);
   expect((await tooLong.json()).error.field).toBe("ticks");

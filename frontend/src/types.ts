@@ -61,6 +61,8 @@ export interface Agent {
   home_city_id: string;
   initial_city_id: string;
   graduation_city_id: string | null;
+  residence_city_id: string;
+  residence_coordinates: [number, number];
   final_city_id: string;
   move_count: number;
   distance_km: number;

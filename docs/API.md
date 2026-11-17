@@ -44,10 +44,10 @@ details. A normal POST completes the run before returning (no background job API
 ```
 
 Unknown properties are rejected. Probabilities are finite in [0,1].
-2–100 agents and 1–5300 simulated days. Each tick represents one simulated day;
+2–100 agents and 1–10,958 simulated days (about 30 years). Each tick represents one simulated day;
 tick 0 is the initial placement. Reject workloads where
 `agents * (agents - 1) / 2 * (ticks + include_tick_zero)` exceeds 500000.
-At 5300 days, the workload limit allows at most 14 agents. The JSON Schema does
+At 10,958 days, the workload limit allows at most 10 agents. The JSON Schema does
 not express the workload check or the numeric upper bound of the seed string.
 
 `participants` is optional. A nonempty array has one entry per agent, in agent
@@ -64,13 +64,21 @@ Gregorian `YYYY-MM-DD` date for tick 0. It identifies the trip and seeds the
 random generator with the date as a YYYYMMDD integer, taking precedence over any
 supplied `seed`. The whole simulation, including the final tick, must fall within
 1901–2099. Legacy requests may omit `start_date` or send `null` and supply a
-decimal u64 string as `seed` instead. Those runs use the constant baseline.
+decimal u64 string as `seed` instead. Those runs use the constant baseline and
+no workday restrictions.
+
+Tick 1's position is the fixed post-graduation residence. Starting on tick 2,
+a simulated workday's sample is in the residence city and strictly less than
+15 km from that point, measured as a Haversine distance. If the traveler is
+away on a day off, they return by the next workday. The calendar uses published
+mainland Chinese holiday and makeup workday schedules for 2026 and 2027. Other
+years use Monday through Friday, with lunar New Year days 1–7 off.
 
 The model converts lunar month 1, day 1 to a Gregorian date each year. From 21
 days before that date, the return probability rises linearly to
 `baseline + 0.75 * (1 - baseline)`, holds from lunar New Year through day 7,
 then falls linearly back to baseline over the next seven days. The effect only
-changes the direction choice after a traveler away from home decides to move.
+changes the direction choice after a traveler away from their hometown decides to move on a day off.
 The conversion is checked against the [Hong Kong Observatory calendar](https://www.hko.gov.hk/en/gts/time/conversion.htm).
 
 ## Results and event pagination
@@ -79,6 +87,8 @@ The conversion is checked against the [Hong Kong Observatory calendar](https://w
 and `agents`. IDs are opaque server-issued strings, separate from the seed;
 simulation results and event ordering are reproducible, not HTTP IDs. Agents
 numbered from 0. `graduation_city_id` is null when there was no preset move.
+`residence_city_id` and `residence_coordinates` are the city and WGS84 point
+established on day 1, even if no graduation city was specified.
 Each trajectory includes tick 0 and all ticks through the requested duration.
 Each tick has the city ID, a point sampled along an OSM road in WGS84
 `[longitude, latitude]`, its `osm_way_id`, and its `street_id` and optional

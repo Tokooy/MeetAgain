@@ -9,7 +9,7 @@ interface Props {
   onStart: (config: Config) => void;
   onReset: () => void;
 }
-const MAX_DAYS = 5300;
+const MAX_DAYS = 10_958;
 const MAX_PAIR_CHECKS = 500_000;
 const defaults = {
   agents: "2",
@@ -124,7 +124,7 @@ export function Controls({ busy, cities, onStart, onReset }: Props) {
           />
           <label className="field">
             <span>
-              观察时长 <small>DAYS</small>
+              观察时长 <small>最长约 30 年</small>
             </span>
             <div className="number-wrap">
               <input
@@ -171,6 +171,10 @@ export function Controls({ busy, cities, onStart, onReset }: Props) {
           </button>
           {advanced && (
             <div className="advanced-fields">
+              <p className="field-hint">
+                以下换城概率用于休息日。工作日的活动范围为定居点周围 15
+                公里以内。
+              </p>
               {(
                 [
                   {

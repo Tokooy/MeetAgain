@@ -161,7 +161,11 @@ export default function App() {
               </div>
             )}
           </div>
-          <Playback ticks={result?.config.ticks ?? 0} enabled={!!result} />
+          <Playback
+            ticks={result?.config.ticks ?? 0}
+            enabled={!!result}
+            startDate={result?.config.start_date}
+          />
         </section>
         <Results
           result={result}
@@ -199,7 +203,8 @@ export default function App() {
         <h2>一次关于偶然的实验</h2>
         <p>
           每个人第 0 天在自己的家乡。如果选了毕业后的去向，第 1
-          天到达该城市；此后每天按出行概率决定是否换城市。决定从外地出发后，可以沿最短路线往家乡走一站，也可以去其他相邻城市。
+          天到达该城市，并固定一个定居点。工作日的道路位置离定居点不到 15
+          公里；休息日仍按出行概率旅行。
         </p>
         <ul>
           <li>
@@ -212,7 +217,7 @@ export default function App() {
           </li>
           <li>
             <Check size={14} />
-            临近农历新年时更容易往家乡走，初七之后逐渐降回平日水平。
+            休息日出发时，越临近农历新年，越可能往家乡走。初七之后逐渐降回原来的概率。
           </li>
           <li>
             <Check size={14} />
@@ -220,8 +225,8 @@ export default function App() {
           </li>
         </ul>
         <p>
-          城市边界和街道来自
-          OpenStreetMap。地图上的虚线表示模拟中的城市连接，个体点位表示当天采样的道路位置。
+          城市边界和街道来自 OpenStreetMap。2026、2027
+          年按已公布的放假和调休安排计算工作日；其他年份以周一至周五为工作日，春节初一至初七休息。地图上的虚线表示模拟中的城市连接，个体点位表示当天采样的道路位置。
         </p>
         <p>
           有限模拟中的结果不等于现实预测。“至少一对相遇”和“全员同时相聚”会分别报告。事件缓存保留

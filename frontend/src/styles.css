@@ -771,6 +771,14 @@ input[type="checkbox"] {
   color: var(--muted);
   margin-bottom: 4px;
 }
+.playback-date {
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.residence-link {
+  margin: 6px 0;
+}
 .scrubber b {
   color: var(--text);
   font-size: 11px;

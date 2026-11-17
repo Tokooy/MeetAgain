@@ -75,7 +75,7 @@ export function ParticipantSetup({
     <section className="participant-setup" aria-labelledby="participant-title">
       <h3 id="participant-title">家乡与毕业去向</h3>
       <p className="field-hint">
-        第 0 天在家乡。选定毕业去向后，第 1 天到达该城市。
+        第 0 天在家乡。第 1 天在到达城市设定固定住址，工作日围绕住址活动。
       </p>
       <label className="checkbox-field">
         <input

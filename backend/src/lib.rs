@@ -3,3 +3,4 @@ mod festival;
 pub mod graph;
 pub mod simulation;
 mod streets;
+mod workday;

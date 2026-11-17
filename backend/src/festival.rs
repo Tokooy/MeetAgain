@@ -29,6 +29,11 @@ fn new_year(year: i32) -> NaiveDate {
         .to_naive_date()
 }
 
+pub(crate) fn is_modeled_holiday(date: NaiveDate) -> bool {
+    let days = date.signed_duration_since(new_year(date.year())).num_days();
+    (0..HOLIDAY_DAYS).contains(&days)
+}
+
 fn festival_weight(days_from_new_year: i64) -> f64 {
     if days_from_new_year < 0 {
         (1.0 + days_from_new_year as f64 / LEAD_DAYS as f64).max(0.0)
@@ -86,7 +91,7 @@ mod tests {
 
     #[test]
     fn validates_complete_simulation_range_and_gregorian_dates() {
-        assert!(parse_start("2028-02-29", 5300).is_ok());
+        assert!(parse_start("2028-02-29", 10_958).is_ok());
         assert!(parse_start("2027-02-29", 1).is_err());
         assert!(parse_start("2027-2-03", 1).is_err());
         assert!(parse_start("1900-12-31", 1).is_err());

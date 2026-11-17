@@ -245,6 +245,8 @@ export function Results({
                   家乡：{cityName(agent.home_city_id)}
                   {agent.graduation_city_id &&
                     ` · 毕业后到${cityName(agent.graduation_city_id)}`}
+                  {" · 定居"}
+                  {cityName(agent.residence_city_id)}
                   {" · 最终停留"}
                   {cityName(agent.final_city_id)}
                 </p>
@@ -253,6 +255,16 @@ export function Results({
                   <span>{agent.visited_city_ids.length} 座城市</span>
                   <span>约 {Math.round(agent.distance_km)} km</span>
                 </div>
+                <button
+                  className="text-button residence-link"
+                  type="button"
+                  onClick={() => {
+                    setPlaying(false);
+                    focusMap(agent.residence_coordinates);
+                  }}
+                >
+                  查看定居点
+                </button>
                 <details>
                   <summary>
                     查看完整位置序列

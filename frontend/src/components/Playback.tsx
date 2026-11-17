@@ -3,10 +3,17 @@ import { Pause, Play, SkipBack } from "lucide-react";
 import { useView } from "../store";
 interface Props {
   ticks: number;
+  startDate?: string | null;
   enabled: boolean;
 }
-export function Playback({ ticks, enabled }: Props) {
+export function Playback({ ticks, enabled, startDate }: Props) {
   const { tick, playing, setTick, setPlaying } = useView();
+  const date =
+    enabled && startDate
+      ? new Date(Date.parse(startDate) + tick * 86_400_000)
+          .toISOString()
+          .slice(0, 10)
+      : null;
   useEffect(() => {
     if (!playing || !enabled) return;
     const timer = window.setInterval(() => {
@@ -42,7 +49,13 @@ export function Playback({ ticks, enabled }: Props) {
       </button>
       <div className="scrubber">
         <label htmlFor="tick">
-          旅程回放{" "}
+          {date ? (
+            <time className="playback-date" dateTime={date}>
+              {date}
+            </time>
+          ) : (
+            "旅程回放"
+          )}
           <span>
             <b>{String(tick).padStart(3, "0")}</b> / {enabled ? ticks : "—"}
           </span>
