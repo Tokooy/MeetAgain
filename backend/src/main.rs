@@ -30,8 +30,15 @@ enum Command {
         agents: u32,
         #[arg(long, default_value_t = 365)]
         ticks: u32,
+        /// Random seed for simulations without a separation date.
         #[arg(long, default_value = "20261116")]
         seed: String,
+        /// Give every traveler the same randomly selected hometown.
+        #[arg(long)]
+        same_hometown: bool,
+        /// Separation date (YYYY-MM-DD). Determines the random draws and festival timing.
+        #[arg(long)]
+        start_date: Option<String>,
         #[arg(long, default_value_t = 0.10)]
         home_move: f64,
         #[arg(long, default_value_t = 0.25)]
@@ -77,6 +84,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             agents,
             ticks,
             seed,
+            same_hometown,
+            start_date,
             home_move,
             away_move,
             home_return,
@@ -86,6 +95,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 agents,
                 ticks,
                 seed,
+                same_hometown,
+                start_date,
                 movement: Movement {
                     home_move_probability: home_move,
                     away_move_probability: away_move,

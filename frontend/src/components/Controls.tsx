@@ -13,7 +13,8 @@ const MAX_PAIR_CHECKS = 500_000;
 const defaults = {
   agents: "20",
   ticks: "365",
-  seed: "20261116",
+  sameHometown: false,
+  startDate: "2026-11-16",
   home: 0.1,
   away: 0.25,
   back: 0.6,
@@ -27,16 +28,18 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
   const budget = pairsPerDay * (Number(values.ticks) + Number(initial));
   const maxDaysForAgents =
     Math.floor(MAX_PAIR_CHECKS / pairsPerDay) - Number(initial);
-  const seedValid =
-    /^[0-9]{1,20}$/.test(values.seed) &&
-    BigInt(values.seed) <= 18446744073709551615n;
+  const start = Date.parse(values.startDate);
+  const calendarValid =
+    start >= Date.parse("1901-01-01") &&
+    start + Number(values.ticks) * 86_400_000 <= Date.parse("2099-12-31");
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (budget > MAX_PAIR_CHECKS || !seedValid || busy || !ready) return;
+    if (budget > MAX_PAIR_CHECKS || !calendarValid || busy || !ready) return;
     onStart({
       agents: Number(values.agents),
       ticks: Number(values.ticks),
-      seed: values.seed,
+      same_hometown: values.sameHometown,
+      start_date: values.startDate,
       movement: {
         home_move_probability: values.home,
         away_move_probability: values.away,
@@ -77,6 +80,20 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
               <span>人</span>
             </div>
           </label>
+          <label className="checkbox-field shared-hometown">
+            <input
+              type="checkbox"
+              checked={values.sameHometown}
+              onChange={(e) =>
+                setValues({ ...values, sameHometown: e.target.checked })
+              }
+              aria-describedby="shared-hometown-hint"
+            />
+            所有人从同一座家乡城市出发
+          </label>
+          <p className="field-hint shared-hometown" id="shared-hometown-hint">
+            勾选后，系统随机选一座城市作为大家的家乡，每个人仍独立决定去哪儿。
+          </p>
           <label className="field">
             <span>
               观察时长 <small>DAYS</small>
@@ -97,22 +114,23 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
             </div>
           </label>
           <label className="field">
-            <span>旅程编号</span>
+            <span>分开日期（旅程编号）</span>
             <input
-              aria-label="旅程编号"
-              aria-describedby="journey-code-hint"
-              className="seed-input"
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]{1,20}"
-              maxLength={20}
+              aria-label="分开日期（旅程编号）"
+              aria-describedby="departure-date-hint"
+              className="departure-date"
+              type="date"
+              min="1901-01-01"
+              max="2099-12-31"
               required
-              value={values.seed}
-              onChange={(e) => setValues({ ...values, seed: e.target.value })}
+              value={values.startDate}
+              onChange={(e) =>
+                setValues({ ...values, startDate: e.target.value })
+              }
             />
           </label>
-          <p className="field-hint" id="journey-code-hint">
-            编号和设置相同，模拟结果就相同。想试试不同的旅程，可以换个编号。
+          <p className="field-hint" id="departure-date-hint">
+            这是模拟的第 0 天。选同一天、用相同的设置，就能重跑同一段旅程。
           </p>
           <button
             className="advanced-toggle"
@@ -127,11 +145,23 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
             <div className="advanced-fields">
               {(
                 [
-                  { key: "home", label: "在家出行概率" },
-                  { key: "away", label: "在外出行概率" },
-                  { key: "back", label: "出行时返乡倾向" },
+                  {
+                    key: "home",
+                    label: "在家乡时，今天出发的概率",
+                    hint: "10% 表示今天有 10% 的机会离开家乡，去一座相邻城市。",
+                  },
+                  {
+                    key: "away",
+                    label: "在外地时，今天换城市的概率",
+                    hint: "25% 表示今天有 25% 的机会去另一座城市，其余时候留在原地。",
+                  },
+                  {
+                    key: "back",
+                    label: "在外地决定出发后，往家走的概率",
+                    hint: "平日为 60% 时，每 100 次外地出发约有 60 次沿最短路线往家乡走一站。其余会随机选邻近城市，也可能碰巧走向家乡。",
+                  },
                 ] as const
-              ).map(({ key, label }) => (
+              ).map(({ key, label, hint }) => (
                 <label className="slider-field" key={key}>
                   <span>
                     {label}
@@ -139,6 +169,7 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
                   </span>
                   <input
                     aria-label={label}
+                    aria-describedby={`behavior-${key}-hint`}
                     type="range"
                     min="0"
                     max="1"
@@ -148,8 +179,16 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
                       setValues({ ...values, [key]: Number(e.target.value) })
                     }
                   />
+                  <small className="field-hint" id={`behavior-${key}-hint`}>
+                    {hint}
+                  </small>
                 </label>
               ))}
+              <p className="field-hint">
+                春节前 21
+                天，出发后往家走的概率逐步提高，初一到初七保持最高。初七之后，7
+                天内降回平日水平。
+              </p>
               <label className="checkbox-field">
                 <input
                   type="checkbox"
@@ -166,15 +205,17 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
               {maxDaysForAgents.toLocaleString("zh-CN")} 天以内。
             </p>
           )}
-          {!seedValid && (
+          {!calendarValid && (
             <p className="error" role="alert">
-              旅程编号须为 0 至 18446744073709551615 的整数。
+              请调整分开日期或观察天数，确保模拟日期都在 1901 至 2099 年内。
             </p>
           )}
           <button
             className="primary-button"
             type="submit"
-            disabled={busy || !ready || budget > MAX_PAIR_CHECKS || !seedValid}
+            disabled={
+              busy || !ready || budget > MAX_PAIR_CHECKS || !calendarValid
+            }
           >
             {busy ? "正在推演…" : "开始模拟"}
             <ArrowUpRight size={18} />

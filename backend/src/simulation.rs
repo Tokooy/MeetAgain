@@ -1,5 +1,5 @@
 //! Synchronous independent agents; one edge per simulated day, with no communication.
-use crate::graph::RoadGraph;
+use crate::{festival, graph::RoadGraph};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -38,7 +38,12 @@ pub struct EncounterRules {
 pub struct SimulationConfig {
     pub agents: u32,
     pub ticks: u32,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub seed: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub same_hometown: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_date: Option<String>,
     pub movement: Movement,
     pub encounters: EncounterRules,
 }
@@ -55,6 +60,10 @@ fn invalid(field: &'static str, message: &'static str) -> SimulationError {
 
 impl SimulationConfig {
     pub fn validate(&self) -> Result<u64, SimulationError> {
+        self.validate_with_calendar().map(|(seed, _)| seed)
+    }
+
+    fn validate_with_calendar(&self) -> Result<(u64, Option<chrono::NaiveDate>), SimulationError> {
         if !(2..=100).contains(&self.agents) {
             return Err(invalid("agents", "must be between 2 and 100"));
         }
@@ -93,15 +102,22 @@ impl SimulationConfig {
                 "agents × (agents − 1) / 2 × counted ticks must not exceed 500000",
             ));
         }
+        if let Some(value) = self.start_date.as_deref() {
+            let date = festival::parse_start(value, self.ticks)
+                .map_err(|message| invalid("start_date", message))?;
+            return Ok((festival::date_seed(date), Some(date)));
+        }
         if self.seed.is_empty()
             || self.seed.len() > 20
             || !self.seed.bytes().all(|b| b.is_ascii_digit())
         {
             return Err(invalid("seed", "must be a decimal u64 string"));
         }
-        self.seed
+        let seed = self
+            .seed
             .parse()
-            .map_err(|_| invalid("seed", "decimal integer exceeds u64"))
+            .map_err(|_| invalid("seed", "decimal integer exceeds u64"))?;
+        Ok((seed, None))
     }
 }
 
@@ -210,11 +226,15 @@ pub fn simulate(
     graph: &RoadGraph,
     config: &SimulationConfig,
 ) -> Result<SimulationResult, SimulationError> {
-    let seed = config.validate()?;
+    let (seed, start) = config.validate_with_calendar()?;
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let mut positions: Vec<usize> = (0..config.agents)
-        .map(|_| rng.random_range(0..graph.cities.len()))
-        .collect();
+    let mut positions: Vec<usize> = if config.same_hometown {
+        vec![rng.random_range(0..graph.cities.len()); config.agents as usize]
+    } else {
+        (0..config.agents)
+            .map(|_| rng.random_range(0..graph.cities.len()))
+            .collect()
+    };
     let homes = positions.clone();
     let mut agents: Vec<AgentSummary> = homes
         .iter()
@@ -240,11 +260,17 @@ pub fn simulate(
     let mut first_all = None;
     for tick in 0..=config.ticks {
         if tick > 0 {
+            let mut movement = config.movement.clone();
+            if let Some(start) = start {
+                let date = start + chrono::Days::new(u64::from(tick));
+                movement.home_return_probability =
+                    festival::return_probability(date, movement.home_return_probability);
+            }
             // Every decision reads the previous tick. No agent reacts to another agent.
             let next: Vec<usize> = positions
                 .iter()
                 .zip(&homes)
-                .map(|(city, home)| destination(graph, *city, *home, &config.movement, &mut rng))
+                .map(|(city, home)| destination(graph, *city, *home, &movement, &mut rng))
                 .collect();
             for (i, city) in next.iter().enumerate() {
                 let agent = &mut agents[i];

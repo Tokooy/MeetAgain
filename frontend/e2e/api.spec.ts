@@ -70,6 +70,11 @@ test("real HTTP responses conform to the confirmed JSON schemas", async ({
   });
   expect(tooLong.status()).toBe(422);
   expect((await tooLong.json()).error.field).toBe("ticks");
+  const invalidDate = await request.post("/api/simulations", {
+    data: { ...config, start_date: "2027-02-29" },
+  });
+  expect(invalidDate.status()).toBe(422);
+  expect((await invalidDate.json()).error.field).toBe("start_date");
   const malformed = await request.post("/api/simulations", {
     data: Buffer.from("{"),
     headers: { "content-type": "application/json" },

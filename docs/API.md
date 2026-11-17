@@ -24,7 +24,7 @@ details. A normal POST completes the run before returning (no background job API
 {
   "agents": 20,
   "ticks": 365,
-  "seed": "20261116",
+  "start_date": "2026-11-16",
   "movement": {
     "home_move_probability": 0.1,
     "away_move_probability": 0.25,
@@ -37,13 +37,27 @@ details. A normal POST completes the run before returning (no background job API
 }
 ```
 
-All fields required; unknown properties rejected. Probabilities finite in [0,1].
+Unknown properties are rejected. Probabilities are finite in [0,1].
 2–100 agents and 1–5300 simulated days. Each tick represents one simulated day;
-tick 0 is the initial placement. The UI calls the seed a journey code. It is a
-decimal u64 encoded as a string, with maximum 18446744073709551615. Reject workloads where
+tick 0 is the initial placement. Reject workloads where
 `agents * (agents - 1) / 2 * (ticks + include_tick_zero)` exceeds 500000.
 At 5300 days, the workload limit allows at most 14 agents. The JSON Schema does
 not express the workload check or the numeric upper bound of the seed string.
+
+`same_hometown: true` randomly selects one city as every traveler's hometown and
+initial position. Movement decisions remain independent. `start_date` is a
+Gregorian `YYYY-MM-DD` date for tick 0. It identifies the trip and seeds the
+random generator with the date as a YYYYMMDD integer, taking precedence over any
+supplied `seed`. The whole simulation, including the final tick, must fall within
+1901–2099. Legacy requests may omit `start_date` or send `null` and supply a
+decimal u64 string as `seed` instead. Those runs use the constant baseline.
+
+The model converts lunar month 1, day 1 to a Gregorian date each year. From 21
+days before that date, the return probability rises linearly to
+`baseline + 0.75 * (1 - baseline)`, holds from lunar New Year through day 7,
+then falls linearly back to baseline over the next seven days. The effect only
+changes the direction choice after a traveler away from home decides to move.
+The conversion is checked against the [Hong Kong Observatory calendar](https://www.hko.gov.hk/en/gts/time/conversion.htm).
 
 ## Results and event pagination
 

@@ -9,6 +9,8 @@ fn config() -> SimulationConfig {
         agents: 20,
         ticks: 100,
         seed: "20261116".into(),
+        same_hometown: false,
+        start_date: None,
         movement: Movement::default(),
         encounters: EncounterRules::default(),
     }
@@ -182,6 +184,36 @@ fn invalid_parameters_fail_before_simulation() {
     let mut c = config();
     c.seed = u64::MAX.to_string();
     assert!(c.validate().is_ok());
+}
+
+#[test]
+fn shared_hometown_sets_every_initial_position_and_remains_reproducible() {
+    let graph = RoadGraph::jiangsu().unwrap();
+    let mut config = config();
+    config.same_hometown = true;
+    config.start_date = Some("2027-01-01".into());
+    config.seed.clear();
+    assert_eq!(config.validate().unwrap(), 20270101);
+    let result = simulate(&graph, &config).unwrap();
+    let home = &result.agents[0].home_city_id;
+    assert!(
+        result
+            .agents
+            .iter()
+            .all(|agent| { agent.home_city_id == *home && agent.trajectory[0].city_id == *home })
+    );
+    assert_eq!(result, simulate(&graph, &config).unwrap());
+
+    config.start_date = None;
+    config.seed = "20270101".into();
+    let baseline = simulate(&graph, &config).unwrap();
+    assert!(
+        result
+            .agents
+            .iter()
+            .zip(&baseline.agents)
+            .any(|(with, without)| { with.trajectory != without.trajectory })
+    );
 }
 
 #[test]

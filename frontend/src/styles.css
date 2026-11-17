@@ -329,6 +329,7 @@ h2 {
 }
 input[type="number"],
 input[type="text"],
+input[type="date"],
 select {
   background: var(--surface-2);
   color: var(--text);
@@ -360,10 +361,9 @@ select {
 .number-wrap input::-webkit-inner-spin-button {
   margin-right: 16px;
 }
-.seed-input {
+.departure-date {
   margin-top: 8px;
   font-size: 13px;
-  letter-spacing: 1.5px;
   height: 44px;
   font-variant-numeric: tabular-nums;
 }
@@ -401,6 +401,10 @@ select {
   font-size: 10px;
   color: var(--muted);
   margin-bottom: 8px;
+}
+.slider-field .field-hint {
+  display: block;
+  margin-top: 4px;
 }
 .slider-field b {
   font-weight: 500;
@@ -1225,7 +1229,8 @@ input[type="checkbox"] {
   .controls .error,
   .controls .primary-button,
   .controls .reset-button,
-  .controls .field-hint {
+  .controls .field-hint,
+  .controls .shared-hometown {
     grid-column: 1 / -1;
   }
   .controls .description {

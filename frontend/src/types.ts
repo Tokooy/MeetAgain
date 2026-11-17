@@ -27,7 +27,9 @@ export interface Graph {
 export interface Config {
   agents: number;
   ticks: number;
-  seed: string;
+  seed?: string;
+  same_hometown?: boolean;
+  start_date?: string | null;
   movement: {
     home_move_probability: number;
     away_move_probability: number;

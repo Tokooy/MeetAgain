@@ -23,9 +23,30 @@ test("map, simulation, playback, filtering, download and reset work through real
   await expect(page.locator(".city-name").first()).toBeInViewport();
   expect((await page.locator(".workspace").boundingBox())!.y).toBeLessThan(140);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.getByRole("button", { name: /行为参数/ }).click();
+  await expect(page.getByLabel("在家乡时，今天出发的概率")).toHaveValue("0.1");
+  await expect(page.getByLabel("在外地时，今天换城市的概率")).toHaveValue(
+    "0.25",
+  );
+  await expect(page.getByLabel("在外地决定出发后，往家走的概率")).toHaveValue(
+    "0.6",
+  );
+  await expect(page.getByText(/初一到初七保持最高/)).toBeVisible();
+  await expect(page.getByLabel("分开日期（旅程编号）")).toHaveValue(
+    "2026-11-16",
+  );
+  await page.getByRole("button", { name: /行为参数/ }).click();
+  const run = page.waitForResponse("**/api/simulations");
   await page.getByRole("button", { name: "开始模拟" }).click();
-  await expect(page.getByTestId("pair-count")).toHaveText("152对");
-  await expect(page.getByText("5,207 次事件")).toBeVisible();
+  const { summary } = await (await run).json();
+  await expect(page.getByTestId("pair-count")).toHaveText(
+    `${summary.unique_encounter_pairs}对`,
+  );
+  await expect(
+    page.getByText(
+      `${summary.encounter_event_count.toLocaleString("zh-CN")} 次事件`,
+    ),
+  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "完整结果", exact: true }),
   ).toBeEnabled();
@@ -45,7 +66,7 @@ test("map, simulation, playback, filtering, download and reset work through real
   const chunks: Buffer[] = [];
   for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
   const result = JSON.parse(Buffer.concat(chunks).toString());
-  expect(result.encounters.length).toBe(5207);
+  expect(result.encounters.length).toBe(summary.encounter_event_count);
   expect(result.agents.length).toBe(20);
   expect(result.agents[0].trajectory.length).toBe(366);
   await page.locator(".results").evaluate((e) => {
@@ -104,15 +125,27 @@ test("mobile layout collapses, respects reduced motion and has no horizontal ove
   await page.getByText("实验设置", { exact: true }).click();
   await page.getByLabel("同行人数", { exact: true }).fill("4");
   await page.getByLabel("观察时长", { exact: true }).fill("5300");
-  await page.getByLabel("旅程编号", { exact: true }).fill("42");
+
+  await page.getByLabel("所有人从同一座家乡城市出发").check();
+  await page.getByLabel("分开日期（旅程编号）").fill("2027-01-01");
   const simulation = page.waitForResponse("**/api/simulations");
   await page.getByRole("button", { name: "开始模拟" }).click();
   const response = await simulation;
   expect(response.status()).toBe(201);
-  expect((await response.json()).config).toMatchObject({
+  const result = await response.json();
+  expect(result.config).not.toHaveProperty("seed");
+  expect(result.config).toMatchObject({
     ticks: 5300,
-    seed: "42",
+    same_hometown: true,
+    start_date: "2027-01-01",
   });
+  expect(
+    new Set(
+      result.agents.map(
+        (agent: { home_city_id: string }) => agent.home_city_id,
+      ),
+    ).size,
+  ).toBe(1);
   await expect(page.getByLabel("当前天数", { exact: true })).toHaveAttribute(
     "max",
     "5300",
