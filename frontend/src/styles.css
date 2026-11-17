@@ -521,13 +521,19 @@ input[type="checkbox"] {
   position: absolute;
   left: 24px;
   top: 24px;
-  pointer-events: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 9px;
-  letter-spacing: 1px;
+  font-size: 10px;
+  letter-spacing: 0.3px;
   color: var(--text);
+}
+.map-heading select {
+  width: auto;
+  max-width: 138px;
+  padding: 4px 8px;
+  font-size: 11px;
+  background: var(--surface);
 }
 .live-dot,
 .status-dot {
@@ -540,13 +546,6 @@ input[type="checkbox"] {
 .live-dot,
 .status-dot.online {
   background: var(--accent);
-}
-.map-model {
-  color: var(--muted);
-  font-size: 9px;
-  letter-spacing: 0;
-  padding-left: 8px;
-  border-left: 1px solid var(--line);
 }
 .map-compass {
   position: absolute;
@@ -589,7 +588,7 @@ input[type="checkbox"] {
   bottom: 32px;
   left: 24px;
   display: flex;
-  gap: 16px;
+  gap: 10px;
   font-size: 9px;
   color: var(--muted);
   pointer-events: none;
@@ -605,6 +604,10 @@ input[type="checkbox"] {
   border-radius: 50%;
   background: var(--muted);
 }
+.legend-street {
+  width: 12px;
+  border-top: 2px solid var(--amber);
+}
 .legend-road {
   width: 12px;
   border-top: 1px dashed var(--muted);
@@ -616,13 +619,25 @@ input[type="checkbox"] {
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
 }
-.map-coordinate-note {
+.map-attribution {
   position: absolute;
-  bottom: 12px;
-  left: 24px;
-  font-size: 8px;
-  color: var(--faint);
-  pointer-events: none;
+  right: 12px;
+  bottom: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+  text-decoration: underline;
+}
+.street-popup .maplibregl-popup-content {
+  background: var(--surface);
+  color: var(--text);
+  padding-right: 28px;
+}
+.street-popup .maplibregl-popup-close-button {
+  color: var(--muted);
+  padding: 0 6px;
 }
 .city-name {
   font-family: inherit;
@@ -1167,9 +1182,6 @@ input[type="checkbox"] {
   .header-center {
     display: none;
   }
-  .map-model {
-    display: none;
-  }
 }
 @media (max-width: 850px) {
   .app-header {
@@ -1295,8 +1307,7 @@ input[type="checkbox"] {
     display: none;
   }
   .map-heading,
-  .map-legend,
-  .map-coordinate-note {
+  .map-legend {
     left: 16px;
   }
   .map-empty {

@@ -1,6 +1,6 @@
 //! Same-origin JSON API and static serving; no frontend build dependency.
 use crate::{
-    graph::{BOUNDARIES, ROADS, RoadGraph},
+    graph::{OSM_ATTRIBUTION, OSM_COPYRIGHT_URL, RoadGraph},
     simulation::{SimulationConfig, SimulationResult, simulate},
 };
 use axum::{
@@ -15,7 +15,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use std::{
     collections::VecDeque,
     path::Path as FilePath,
@@ -24,6 +23,7 @@ use std::{
 };
 use tokio::sync::Semaphore;
 use tower_http::{
+    compression::CompressionLayer,
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
@@ -48,32 +48,17 @@ impl ApiState {
         Self::with_retention(graph, Duration::from_secs(900))
     }
     pub fn with_retention(graph: RoadGraph, retention: Duration) -> Self {
-        let version = format!(
-            "jiangsu-v1-{:x}",
-            Sha256::digest(format!("{BOUNDARIES}\n{ROADS}"))
-        );
-        let mut boundaries = graph.boundaries.clone();
-        for feature in &mut boundaries.features {
-            let props = feature.properties.as_ref().expect("validated properties");
-            let id = format!("{}00", props["id"].as_str().expect("validated id"));
-            feature.properties = Some(serde_json::Map::from_iter([
-                ("city_id".into(), json!(id)),
-                ("name".into(), props["name"].clone()),
-            ]));
-            feature.bbox = None;
-            feature.id = None;
-            feature.foreign_members = None;
-        }
-        boundaries.bbox = None;
-        boundaries.foreign_members = None;
+        let version = graph.version.clone();
         let graph_json = json!({
             "graph_version":version,
-            "coordinate_reference":"source-native longitude/latitude; datum undocumented; no external basemap registration",
-            "nodes":graph.cities,"edges":graph.roads,"boundaries":boundaries,
+            "coordinate_reference":"WGS84 longitude/latitude (GeoJSON)",
+            "nodes":graph.cities,"edges":graph.roads,"boundaries":graph.boundaries,
             "provenance":{
-                "boundary_source_url":"https://raw.githubusercontent.com/longwosion/geojson-map-china/0999e0343308443cf9a2a1490c3eaeea576eb181/geometryProvince/32.json",
+                "boundary_source_url":"https://www.openstreetmap.org/",
+                "attribution":OSM_ATTRIBUTION,
+                "license_url":OSM_COPYRIGHT_URL,
                 "boundary_sha256":graph.boundary_sha256,
-                "road_model":"23 curated undirected intercity road links; approximate spherical center distance in km; bridges only, no ferries"
+                "road_model":"OSM streets clipped to selected cities; simulation links are undirected, weighted by approximate distances between city centers"
             }
         });
         Self {
@@ -152,6 +137,10 @@ pub fn router(state: Arc<ApiState>, static_dir: impl AsRef<FilePath>) -> Router 
     let api = Router::new()
         .route("/api/health", get(health))
         .route("/api/graph", get(graph))
+        .route(
+            "/api/map/roads/{city_id}",
+            get(streets).layer(CompressionLayer::new()),
+        )
         .route("/api/simulations", post(create_simulation))
         .route("/api/simulations/{id}/encounters", get(encounters))
         .route("/api", any(api_not_found))
@@ -184,6 +173,27 @@ async fn health(State(state): State<Arc<ApiState>>) -> Json<Value> {
 }
 async fn graph(State(state): State<Arc<ApiState>>) -> Json<Value> {
     Json(state.graph_json.clone())
+}
+
+async fn streets(
+    State(state): State<Arc<ApiState>>,
+    Path(city_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let data = state.graph.streets(&city_id).ok_or_else(|| {
+        ApiError::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "City is not in the active map",
+            None,
+        )
+    })?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/geo+json"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        data,
+    ))
 }
 
 async fn create_simulation(
@@ -298,8 +308,9 @@ async fn encounters(
 pub async fn serve(
     address: std::net::SocketAddr,
     static_dir: std::path::PathBuf,
+    graph: RoadGraph,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let state = Arc::new(ApiState::new(RoadGraph::jiangsu()?));
+    let state = Arc::new(ApiState::new(graph));
     let listener = tokio::net::TcpListener::bind(address).await?;
     tracing::info!(%address,"MeetAgain listening");
     axum::serve(listener, router(state, static_dir))
@@ -336,7 +347,7 @@ mod tests {
     use tower::ServiceExt;
     #[tokio::test]
     async fn concurrency_guard_returns_json_429() {
-        let state = Arc::new(ApiState::new(RoadGraph::jiangsu().unwrap()));
+        let state = Arc::new(ApiState::new(RoadGraph::bundled().unwrap()));
         let _permit = state.gate.acquire().await.unwrap();
         let config = json!({"agents":20,"ticks":10,"seed":"1","movement":{"home_move_probability":0.1,"away_move_probability":0.25,"home_return_probability":0.6},"encounters":{"include_tick_zero":false,"cross_tick_tolerance":0}});
         let response = router(state.clone(), "/tmp/missing-static")

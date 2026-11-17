@@ -14,7 +14,7 @@ use tower::ServiceExt;
 
 fn app() -> Router {
     router(
-        Arc::new(ApiState::new(RoadGraph::jiangsu().unwrap())),
+        Arc::new(ApiState::new(RoadGraph::bundled().unwrap())),
         "/tmp/meetagain-no-assets",
     )
 }
@@ -55,14 +55,14 @@ async fn graph_and_health_expose_consistent_model_and_normalized_boundaries() {
     let app = app();
     let (status, g) = send(app.clone(), "GET", "/api/graph", None).await;
     assert_eq!(status, 200);
-    assert_eq!(g["nodes"].as_array().unwrap().len(), 13);
-    assert_eq!(g["edges"].as_array().unwrap().len(), 23);
+    assert_eq!(g["edges"].as_array().unwrap().len(), 3);
     let ids: Vec<_> = g["nodes"]
         .as_array()
         .unwrap()
         .iter()
         .map(|n| n["id"].as_str().unwrap())
         .collect();
+    assert_eq!(ids, ["320100", "321000", "321100"]);
     for f in g["boundaries"]["features"].as_array().unwrap() {
         assert!(ids.contains(&f["properties"]["city_id"].as_str().unwrap()));
     }
@@ -73,11 +73,35 @@ async fn graph_and_health_expose_consistent_model_and_normalized_boundaries() {
 }
 
 #[tokio::test]
+async fn street_api_serves_geojson_for_active_cities_only() {
+    let app = app();
+    let graph = RoadGraph::bundled().unwrap();
+    for city in &graph.cities {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/map/roads/{}", city.id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.headers()["content-type"], "application/geo+json");
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(Some(bytes), graph.streets(&city.id));
+    }
+    let (status, _) = send(app, "GET", "/api/map/roads/320400", None).await;
+    assert_eq!(status, 404);
+}
+
+#[tokio::test]
 async fn api_matches_engine_and_pagination_has_no_missing_or_duplicate_events() {
     let app = app();
     let input = config();
     let engine = simulate(
-        &RoadGraph::jiangsu().unwrap(),
+        &RoadGraph::bundled().unwrap(),
         &serde_json::from_value::<SimulationConfig>(input.clone()).unwrap(),
     )
     .unwrap();
@@ -212,7 +236,7 @@ async fn cache_evicts_oldest_run_and_enforces_expiration() {
     );
     let expired = router(
         Arc::new(ApiState::with_retention(
-            RoadGraph::jiangsu().unwrap(),
+            RoadGraph::bundled().unwrap(),
             Duration::ZERO,
         )),
         "/tmp/meetagain-no-assets",
@@ -236,7 +260,7 @@ async fn serves_static_spa_without_api_fallback_leak() {
     let dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
     std::fs::create_dir(&dir).unwrap();
     std::fs::write(dir.join("index.html"), "<!doctype html><h1>SPA</h1>").unwrap();
-    let app = router(Arc::new(ApiState::new(RoadGraph::jiangsu().unwrap())), &dir);
+    let app = router(Arc::new(ApiState::new(RoadGraph::bundled().unwrap())), &dir);
     for path in ["/", "/results/123"] {
         let response = app
             .clone()

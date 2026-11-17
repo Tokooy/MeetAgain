@@ -20,6 +20,7 @@ FROM debian:bookworm-slim@sha256:c67e92c8099ba22853ab4cfda7cfb494d253d6012ca82de
 WORKDIR /app
 COPY --from=backend-build /src/target/release/meetagain /app/meetagain
 COPY --from=frontend-build /src/frontend/dist /app/static
+COPY backend/data/map/ /app/map/
 USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/app/meetagain"]

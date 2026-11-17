@@ -20,7 +20,20 @@ test("real HTTP responses conform to the confirmed JSON schemas", async ({
   conforms("HealthResponse", await health.json());
   const graph = await request.get("/api/graph");
   expect(graph.status()).toBe(200);
-  conforms("GraphResponse", await graph.json());
+  const map = await graph.json();
+  conforms("GraphResponse", map);
+  expect(map.nodes.map((city: { id: string }) => city.id)).toEqual([
+    "320100",
+    "321000",
+    "321100",
+  ]);
+  const streets = await request.get("/api/map/roads/321100");
+  expect(streets.status()).toBe(200);
+  expect(streets.headers()["content-type"]).toContain("application/geo+json");
+  const streetData = await streets.json();
+  conforms("StreetNetwork", streetData);
+  expect(streetData.features).toHaveLength(19_997);
+  expect((await request.get("/api/map/roads/320400")).status()).toBe(404);
   const config = {
     agents: 2,
     ticks: 5300,

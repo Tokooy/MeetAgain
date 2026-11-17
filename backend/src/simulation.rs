@@ -323,7 +323,7 @@ mod tests {
     use super::*;
     #[test]
     fn three_people_produce_three_pairs_in_stable_order() {
-        let graph = RoadGraph::jiangsu().unwrap();
+        let graph = RoadGraph::bundled().unwrap();
         let mut events = Vec::new();
         record_encounters(4, &[0, 0, 0, 1], &graph, &mut events);
         assert_eq!(
@@ -334,14 +334,14 @@ mod tests {
     }
     #[test]
     fn certain_home_return_takes_shortest_path_and_zero_probability_stays() {
-        let graph = RoadGraph::jiangsu().unwrap();
+        let graph = RoadGraph::bundled().unwrap();
         let mut rng = ChaCha8Rng::seed_from_u64(1);
         let always = Movement {
             home_move_probability: 1.0,
             away_move_probability: 1.0,
             home_return_probability: 1.0,
         };
-        for city in 1..13 {
+        for city in 1..graph.cities.len() {
             assert_eq!(
                 destination(&graph, city, 0, &always, &mut rng),
                 graph.step_home(city, 0).unwrap()
@@ -352,7 +352,7 @@ mod tests {
             away_move_probability: 0.0,
             home_return_probability: 1.0,
         };
-        for city in 0..13 {
+        for city in 0..graph.cities.len() {
             assert_eq!(destination(&graph, city, 0, &stay, &mut rng), city);
         }
     }

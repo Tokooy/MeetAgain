@@ -3,6 +3,10 @@ export interface City {
   id: string;
   name: string;
   center: [number, number];
+  osm_relation: number;
+  source_url: string;
+  osm_timestamp: string | null;
+  street_segments: number;
 }
 export interface Road {
   source: string;
@@ -21,6 +25,8 @@ export interface Graph {
   provenance: {
     boundary_source_url: string;
     boundary_sha256: string;
+    attribution: string;
+    license_url: string;
     road_model: string;
   };
 }

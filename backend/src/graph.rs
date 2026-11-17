@@ -1,42 +1,40 @@
-//! Curated city-level road model, not a routable road-network extraction.
+//! The simulation uses city links for movement and serves OSM streets as a separate map layer.
+use axum::body::Bytes;
+use flate2::read::GzDecoder;
 use geo::{Distance, Haversine, Point};
-use geojson::{FeatureCollection, GeoJson, Value};
+use geojson::{Feature, FeatureCollection, GeoJson, Value};
 use petgraph::{
     algo::{astar, connected_components},
     graph::{NodeIndex, UnGraph},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    io::Read,
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 use thiserror::Error;
 
-pub const BOUNDARIES: &str = include_str!("../data/jiangsu.geojson");
-pub const ROADS: &str = include_str!("../data/roads.json");
-const CITY_NAMES: [&str; 13] = [
-    "南京市",
-    "无锡市",
-    "徐州市",
-    "常州市",
-    "苏州市",
-    "南通市",
-    "连云港市",
-    "淮安市",
-    "盐城市",
-    "扬州市",
-    "镇江市",
-    "泰州市",
-    "宿迁市",
-];
+pub const OSM_ATTRIBUTION: &str = "© OpenStreetMap contributors";
+pub const OSM_COPYRIGHT_URL: &str = "https://www.openstreetmap.org/copyright";
+const MAX_STREET_BYTES: u64 = 64 * 1024 * 1024;
 
-#[derive(Debug, Error)]
-#[error("invalid Jiangsu graph: {0}")]
-pub struct GraphError(pub String);
+#[derive(Clone, Debug, Error)]
+#[error("invalid map: {0}")]
+pub struct GraphError(String);
 
 #[derive(Clone, Debug, Serialize)]
 pub struct City {
     pub id: String,
     pub name: String,
     pub center: [f64; 2],
+    pub osm_relation: u64,
+    pub source_url: String,
+    pub osm_timestamp: Option<String>,
+    pub street_segments: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -52,18 +50,44 @@ pub struct RoadGraph {
     pub roads: Vec<Road>,
     pub boundaries: FeatureCollection,
     pub boundary_sha256: String,
+    pub version: String,
+    streets: BTreeMap<String, Bytes>,
     graph: UnGraph<(), f64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Manifest {
+    cities: Vec<String>,
+    links: Vec<[String; 2]>,
+}
+
+#[derive(Deserialize)]
+struct BoundaryProperties {
+    city_id: String,
+    name: String,
+    center: [f64; 2],
+    osm_relation: u64,
+    source_url: String,
+    osm_timestamp: Option<String>,
 }
 
 fn invalid(message: impl Into<String>) -> GraphError {
     GraphError(message.into())
 }
 
+fn city_id_valid(id: &str) -> bool {
+    let alphanumeric = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
+    !id.is_empty()
+        && id.len() <= 32
+        && alphanumeric(id.as_bytes()[0])
+        && id
+            .bytes()
+            .all(|byte| alphanumeric(byte) || matches!(byte, b'_' | b'-'))
+}
+
 fn valid_coordinate(c: &[f64]) -> bool {
-    c.len() == 2
-        && c.iter().all(|v| v.is_finite())
-        && (116.0..=123.0).contains(&c[0])
-        && (30.0..=36.0).contains(&c[1])
+    c.len() == 2 && (-180.0..=180.0).contains(&c[0]) && (-85.0..=85.0).contains(&c[1])
 }
 
 fn validate_polygon(rings: &[Vec<Vec<f64>>]) -> Result<(), GraphError> {
@@ -76,7 +100,7 @@ fn validate_polygon(rings: &[Vec<Vec<f64>>]) -> Result<(), GraphError> {
             || !ring.iter().all(|c| valid_coordinate(c))
         {
             return Err(invalid(
-                "polygon ring is unclosed, too short, or outside Jiangsu bounds",
+                "polygon ring is unclosed, too short, or has invalid coordinates",
             ));
         }
         let area: f64 = ring
@@ -90,128 +114,243 @@ fn validate_polygon(rings: &[Vec<Vec<f64>>]) -> Result<(), GraphError> {
     Ok(())
 }
 
+fn local_error(path: &Path, error: impl std::fmt::Display) -> GraphError {
+    invalid(format!("{}: {error}", path.display()))
+}
+
+fn load_boundary(path: &Path, id: &str) -> Result<(Feature, BoundaryProperties), GraphError> {
+    let input = fs::read_to_string(path).map_err(|error| local_error(path, error))?;
+    let GeoJson::Feature(mut boundary) = input
+        .parse::<GeoJson>()
+        .map_err(|error| local_error(path, error))?
+    else {
+        return Err(local_error(path, "expected one GeoJSON Feature"));
+    };
+    let properties: BoundaryProperties = serde_json::from_value(serde_json::Value::Object(
+        boundary
+            .properties
+            .take()
+            .ok_or_else(|| local_error(path, "missing properties"))?,
+    ))
+    .map_err(|error| local_error(path, error))?;
+    if properties.city_id != id
+        || properties.name.trim().is_empty()
+        || !valid_coordinate(&properties.center)
+        || properties.osm_relation == 0
+        || !(properties.source_url.starts_with("https://")
+            || properties.source_url.starts_with("http://"))
+    {
+        return Err(local_error(
+            path,
+            "invalid city ID, name, center, OSM relation, or extract URL",
+        ));
+    }
+    let geometry = boundary
+        .geometry
+        .take()
+        .ok_or_else(|| local_error(path, "missing geometry"))?;
+    match &geometry.value {
+        Value::Polygon(rings) => {
+            validate_polygon(rings).map_err(|error| local_error(path, error))?
+        }
+        Value::MultiPolygon(polygons) if !polygons.is_empty() => {
+            for rings in polygons {
+                validate_polygon(rings).map_err(|error| local_error(path, error))?;
+            }
+        }
+        _ => {
+            return Err(local_error(
+                path,
+                "expected Polygon or nonempty MultiPolygon",
+            ));
+        }
+    }
+    let feature = Feature {
+        geometry: Some(geometry),
+        properties: Some(serde_json::Map::from_iter([
+            ("city_id".into(), serde_json::json!(id)),
+            ("name".into(), serde_json::json!(properties.name)),
+        ])),
+        ..Feature::default()
+    };
+    Ok((feature, properties))
+}
+
+fn load_streets(path: &Path) -> Result<(Bytes, usize), GraphError> {
+    let file = fs::File::open(path).map_err(|error| local_error(path, error))?;
+    let mut data = Vec::new();
+    GzDecoder::new(file)
+        .take(MAX_STREET_BYTES + 1)
+        .read_to_end(&mut data)
+        .map_err(|error| local_error(path, error))?;
+    if data.len() as u64 > MAX_STREET_BYTES {
+        return Err(local_error(
+            path,
+            "street GeoJSON exceeds 64 MiB uncompressed",
+        ));
+    }
+    let collection: GeoJson =
+        serde_json::from_slice(&data).map_err(|error| local_error(path, error))?;
+    let GeoJson::FeatureCollection(collection) = collection else {
+        return Err(local_error(path, "expected a street FeatureCollection"));
+    };
+    if collection.features.is_empty() {
+        return Err(local_error(path, "expected at least one street"));
+    }
+    for feature in &collection.features {
+        let Some(Value::LineString(line)) = feature.geometry.as_ref().map(|g| &g.value) else {
+            return Err(local_error(path, "a street is missing its LineString"));
+        };
+        if line.len() < 2
+            || !line.iter().all(|point| valid_coordinate(point))
+            || line.windows(2).all(|pair| pair[0] == pair[1])
+        {
+            return Err(local_error(path, "a street has invalid coordinates"));
+        }
+        let class = feature.property("class").and_then(|value| value.as_str());
+        let highway = feature.property("highway").and_then(|value| value.as_str());
+        let id = feature.property("osm_id").and_then(|value| value.as_u64());
+        if !matches!(class, Some("major" | "arterial" | "local"))
+            || highway.is_none_or(str::is_empty)
+            || id.is_none_or(|id| id == 0)
+        {
+            return Err(local_error(
+                path,
+                "a street has invalid class, highway or OSM way ID",
+            ));
+        }
+    }
+    Ok((Bytes::from(data), collection.features.len()))
+}
+
+fn bundled_map_dir() -> PathBuf {
+    if let Ok(executable) = std::env::current_exe()
+        && let Some(parent) = executable.parent()
+    {
+        let alongside = parent.join("map");
+        if alongside.join("map.json").is_file() {
+            return alongside;
+        }
+    }
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("data/map")
+}
+
 impl RoadGraph {
-    pub fn jiangsu() -> Result<Self, GraphError> {
-        Self::load(BOUNDARIES, ROADS)
+    pub fn bundled() -> Result<Self, GraphError> {
+        static BUNDLED: OnceLock<Result<RoadGraph, GraphError>> = OnceLock::new();
+        BUNDLED
+            .get_or_init(|| Self::load_dir(bundled_map_dir()))
+            .clone()
     }
 
-    pub fn load(boundaries: &str, roads: &str) -> Result<Self, GraphError> {
-        let GeoJson::FeatureCollection(collection) = boundaries
-            .parse::<GeoJson>()
-            .map_err(|e| invalid(e.to_string()))?
-        else {
-            return Err(invalid("expected FeatureCollection"));
-        };
-        if collection.features.len() != 13 {
-            return Err(invalid("expected exactly 13 cities"));
+    pub fn load_dir(directory: impl AsRef<Path>) -> Result<Self, GraphError> {
+        let directory = directory.as_ref();
+        let manifest_path = directory.join("map.json");
+        let manifest: Manifest = serde_json::from_slice(
+            &fs::read(&manifest_path).map_err(|error| local_error(&manifest_path, error))?,
+        )
+        .map_err(|error| local_error(&manifest_path, error))?;
+        let mut ids = manifest.cities;
+        if ids.len() < 2 || ids.iter().any(|id| !city_id_valid(id)) {
+            return Err(invalid("map.json requires at least two valid city IDs"));
         }
-        let mut city_map = BTreeMap::new();
-        for feature in &collection.features {
-            let props = feature
-                .properties
-                .as_ref()
-                .ok_or_else(|| invalid("missing properties"))?;
-            let raw_id = props
-                .get("id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| invalid("missing city id"))?;
-            let id = format!("{raw_id}00");
-            let index = (1..=13)
-                .find(|n| id == format!("32{n:02}00"))
-                .ok_or_else(|| invalid("unknown city id"))?;
-            let name = props
-                .get("name")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| invalid("missing city name"))?;
-            if name != CITY_NAMES[index - 1] {
-                return Err(invalid("city id/name mismatch"));
-            }
-            let center: [f64; 2] = serde_json::from_value(
-                props
-                    .get("cp")
-                    .cloned()
-                    .ok_or_else(|| invalid("missing center"))?,
-            )
-            .map_err(|e| invalid(e.to_string()))?;
-            if !valid_coordinate(&center) {
-                return Err(invalid("invalid center"));
-            }
-            let geometry = &feature
-                .geometry
-                .as_ref()
-                .ok_or_else(|| invalid("missing geometry"))?
-                .value;
-            match geometry {
-                Value::Polygon(rings) => validate_polygon(rings)?,
-                Value::MultiPolygon(polygons) if !polygons.is_empty() => {
-                    for rings in polygons {
-                        validate_polygon(rings)?;
-                    }
-                }
-                _ => return Err(invalid("expected Polygon or nonempty MultiPolygon")),
-            }
-            if city_map
-                .insert(
-                    id.clone(),
-                    City {
-                        id,
-                        name: name.to_owned(),
-                        center,
-                    },
-                )
-                .is_some()
-            {
-                return Err(invalid("duplicate city"));
-            }
+        ids.sort_unstable();
+        if ids.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(invalid("duplicate city ID in map.json"));
         }
-        let cities: Vec<City> = city_map.into_values().collect();
+        let mut cities = Vec::new();
+        let mut boundaries = FeatureCollection::default();
+        let mut streets = BTreeMap::new();
+        let mut relations = BTreeSet::new();
+        for id in ids {
+            let city_folder = directory.join("cities").join(&id);
+            let (boundary, properties) = load_boundary(&city_folder.join("boundary.geojson"), &id)?;
+            if !relations.insert(properties.osm_relation) {
+                return Err(invalid(format!(
+                    "OSM relation {} is listed for multiple cities",
+                    properties.osm_relation
+                )));
+            }
+            let (street_json, street_segments) =
+                load_streets(&city_folder.join("streets.geojson.gz"))?;
+            streets.insert(id.clone(), street_json);
+            boundaries.features.push(boundary);
+            cities.push(City {
+                id,
+                name: properties.name,
+                center: properties.center,
+                osm_relation: properties.osm_relation,
+                source_url: properties.source_url,
+                osm_timestamp: properties.osm_timestamp,
+                street_segments,
+            });
+        }
+        let mut graph = UnGraph::new_undirected();
         let indices: BTreeMap<_, _> = cities
             .iter()
-            .enumerate()
-            .map(|(i, c)| (c.id.as_str(), i))
+            .map(|city| (city.id.as_str(), graph.add_node(())))
             .collect();
-        let edges: Vec<[String; 2]> =
-            serde_json::from_str(roads).map_err(|e| invalid(e.to_string()))?;
-        let mut graph = UnGraph::new_undirected();
-        for _ in &cities {
-            graph.add_node(());
+        let mut links = manifest.links;
+        for [source, target] in &mut links {
+            if source > target {
+                std::mem::swap(source, target);
+            }
         }
-        let mut seen = BTreeSet::new();
-        let mut weights = Vec::new();
-        for [source, target] in edges {
+        links.sort_unstable();
+        if links.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(invalid("duplicate undirected city link"));
+        }
+        let mut roads = Vec::new();
+        for [source, target] in links {
             let a = *indices
                 .get(source.as_str())
-                .ok_or_else(|| invalid("unknown road endpoint"))?;
+                .ok_or_else(|| invalid(format!("unknown link endpoint {source}")))?;
             let b = *indices
                 .get(target.as_str())
-                .ok_or_else(|| invalid("unknown road endpoint"))?;
-            if a == b || !seen.insert((a.min(b), a.max(b))) {
-                return Err(invalid("self-loop or duplicate undirected edge"));
+                .ok_or_else(|| invalid(format!("unknown link endpoint {target}")))?;
+            if a == b {
+                return Err(invalid(format!("self-link for {source}")));
             }
-            let distance = Haversine
-                .distance(Point::from(cities[a].center), Point::from(cities[b].center))
-                / 1000.0;
+            let distance = Haversine.distance(
+                Point::from(cities[a.index()].center),
+                Point::from(cities[b.index()].center),
+            ) / 1000.0;
             if !distance.is_finite() || distance <= 0.0 {
-                return Err(invalid("invalid edge weight"));
+                return Err(invalid(format!("invalid distance for {source}–{target}")));
             }
-            graph.add_edge(NodeIndex::new(a), NodeIndex::new(b), distance);
-            weights.push(Road {
+            graph.add_edge(a, b, distance);
+            roads.push(Road {
                 source,
                 target,
                 distance_km: distance,
             });
         }
-        if seen.len() != 23 || connected_components(&graph) != 1 {
-            return Err(invalid("expected 23 edges and one connected component"));
+        if connected_components(&graph) != 1 {
+            return Err(invalid("city links must form one connected component"));
         }
-        weights.sort_by(|a, b| (&a.source, &a.target).cmp(&(&b.source, &b.target)));
+        let boundary_sha256 = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&boundaries).expect("validated boundaries"))
+        );
+        let mut hash = Sha256::new();
+        hash.update(boundary_sha256.as_bytes());
+        hash.update(serde_json::to_vec(&(&cities, &roads)).expect("validated graph metadata"));
+        for data in streets.values() {
+            hash.update(Sha256::digest(data));
+        }
         Ok(Self {
             cities,
-            roads: weights,
-            boundaries: collection,
-            boundary_sha256: format!("{:x}", Sha256::digest(boundaries.as_bytes())),
+            roads,
+            boundaries,
+            boundary_sha256,
+            version: format!("osm-map-v1-{:x}", hash.finalize()),
+            streets,
             graph,
         })
+    }
+
+    pub fn streets(&self, city_id: &str) -> Option<Bytes> {
+        self.streets.get(city_id).cloned()
     }
 
     pub fn neighbors(&self, city: usize) -> Vec<(usize, f64)> {

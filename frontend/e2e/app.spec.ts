@@ -11,12 +11,28 @@ test("map, simulation, playback, filtering, download and reset work through real
     "data-ready",
     "true",
   );
-  await expect(page.locator(".city-name")).toHaveCount(13);
+  await expect(page.locator(".city-name")).toHaveText([
+    "南京市",
+    "扬州市",
+    "镇江市",
+  ]);
   await expect(page.locator(".map-error")).toHaveCount(0);
   await expect(page.getByTestId("city-map")).toHaveAttribute(
     "data-rendered",
     "true",
   );
+  await expect(page.getByTestId("city-map")).toHaveAttribute(
+    "data-streets-rendered",
+    "true",
+  );
+  await expect(
+    page.getByRole("link", { name: "© OpenStreetMap contributors" }),
+  ).toBeVisible();
+  const cityFocus = page.getByLabel("缩放到城市");
+  await cityFocus.selectOption("321100");
+  await expect(cityFocus).toHaveValue("321100");
+  await page.getByRole("button", { name: "显示全部城市" }).click();
+  await expect(cityFocus).toHaveValue("");
   expect(
     (await page.getByTestId("city-map").boundingBox())!.height,
   ).toBeGreaterThan(350);
@@ -100,6 +116,10 @@ test("map, simulation, playback, filtering, download and reset work through real
   await page.getByRole("button", { name: "切换深色主题" }).click();
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.getByTestId("city-map")).toHaveAttribute(
+    "data-streets-rendered",
+    "true",
+  );
   await page.screenshot({
     path: "test-results/desktop-dark.png",
     fullPage: true,
@@ -116,7 +136,7 @@ test("mobile layout collapses, respects reduced motion and has no horizontal ove
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await expect(page.getByTestId("city-map")).toHaveAttribute(
-    "data-ready",
+    "data-streets-rendered",
     "true",
   );
   await expect(

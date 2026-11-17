@@ -65,7 +65,7 @@ export default function App() {
         <div className="header-center">
           <span>SIMULATION LAB</span>
           <i />
-          江苏城市漫游实验
+          城市漫游实验
         </div>
         <div className="header-actions">
           <button className="about-button" onClick={() => setShowAbout(true)}>
@@ -94,12 +94,16 @@ export default function App() {
         <div className="model-metrics">
           <div>
             <b>{graph.data?.nodes.length ?? "—"}</b>
-            <span>地级城市</span>
+            <span>座城市</span>
           </div>
           <i />
           <div>
-            <b>{graph.data?.edges.length ?? "—"}</b>
-            <span>道路连接</span>
+            <b>
+              {graph.data?.nodes
+                .reduce((total, city) => total + city.street_segments, 0)
+                .toLocaleString("zh-CN") ?? "—"}
+            </b>
+            <span>条道路分段</span>
           </div>
           <span className="model-tag">
             <Compass size={13} />
@@ -130,7 +134,7 @@ export default function App() {
           <div className="map-stage">
             {graph.data ? (
               <Suspense
-                fallback={<div className="map-loading">正在展开江苏地图…</div>}
+                fallback={<div className="map-loading">正在展开道路地图…</div>}
               >
                 <CityMap graph={graph.data} result={result} />
               </Suspense>
@@ -203,7 +207,7 @@ export default function App() {
           </li>
           <li>
             <Check size={14} />
-            边权为中心球面距离近似值，不是真实公路里程。
+            模拟用城市中心之间的近似距离决定出行方向。
           </li>
           <li>
             <Check size={14} />
@@ -215,7 +219,8 @@ export default function App() {
           </li>
         </ul>
         <p>
-          历史简化边界的坐标基准未注明，因此只使用自身边界，不叠加外部底图。同城个体点位略有偏移以方便区分，不代表真实街道位置。
+          城市边界和街道来自
+          OpenStreetMap。地图上的虚线表示模拟中的城市连接，个体点位表示所在城市。
         </p>
         <p>
           有限模拟中的结果不等于现实预测。“至少一对相遇”和“全员同时相聚”会分别报告。事件缓存保留
@@ -223,13 +228,13 @@ export default function App() {
         </p>
         <a
           href={
-            graph.data?.provenance.boundary_source_url ??
-            "https://github.com/longwosion/geojson-map-china"
+            graph.data?.provenance.license_url ??
+            "https://www.openstreetmap.org/copyright"
           }
           target="_blank"
           rel="noreferrer"
         >
-          查看边界数据来源
+          查看地图数据来源
           <ArrowUpRight size={14} />
         </a>
       </dialog>

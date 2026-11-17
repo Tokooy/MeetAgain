@@ -101,7 +101,7 @@
         },
         "city_id": {
           "type": "string",
-          "pattern": "^32(0[1-9]|1[0-3])00$"
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
         }
       },
       "required": [
@@ -119,15 +119,15 @@
         },
         "home_city_id": {
           "type": "string",
-          "pattern": "^32(0[1-9]|1[0-3])00$"
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
         },
         "initial_city_id": {
           "type": "string",
-          "pattern": "^32(0[1-9]|1[0-3])00$"
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
         },
         "final_city_id": {
           "type": "string",
-          "pattern": "^32(0[1-9]|1[0-3])00$"
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
         },
         "move_count": {
           "type": "integer",
@@ -141,7 +141,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^32(0[1-9]|1[0-3])00$"
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
           }
         },
         "trajectory": {
@@ -256,7 +256,7 @@
         },
         "city_id": {
           "type": "string",
-          "pattern": "^32(0[1-9]|1[0-3])00$"
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
         },
         "agent_ids": {
           "type": "array",
@@ -378,7 +378,7 @@
           "properties": {
             "city_id": {
               "type": "string",
-              "pattern": "^32(0[1-9]|1[0-3])00$"
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
             },
             "name": {
               "type": "string"
@@ -412,8 +412,7 @@
           "items": {
             "$ref": "#/$defs/BoundaryFeature"
           },
-          "minItems": 13,
-          "maxItems": 13
+          "minItems": 2
         }
       },
       "required": [
@@ -438,7 +437,7 @@
             "properties": {
               "id": {
                 "type": "string",
-                "pattern": "^32(0[1-9]|1[0-3])00$"
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
               },
               "name": {
                 "type": "string"
@@ -450,17 +449,37 @@
                 },
                 "minItems": 2,
                 "maxItems": 2
+              },
+              "osm_relation": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "source_url": {
+                "type": "string"
+              },
+              "osm_timestamp": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "street_segments": {
+                "type": "integer",
+                "minimum": 1
               }
             },
             "required": [
               "id",
               "name",
-              "center"
+              "center",
+              "osm_relation",
+              "source_url",
+              "osm_timestamp",
+              "street_segments"
             ],
             "additionalProperties": false
           },
-          "minItems": 13,
-          "maxItems": 13
+          "minItems": 2
         },
         "edges": {
           "type": "array",
@@ -469,11 +488,11 @@
             "properties": {
               "source": {
                 "type": "string",
-                "pattern": "^32(0[1-9]|1[0-3])00$"
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
               },
               "target": {
                 "type": "string",
-                "pattern": "^32(0[1-9]|1[0-3])00$"
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
               },
               "distance_km": {
                 "type": "number",
@@ -487,8 +506,7 @@
             ],
             "additionalProperties": false
           },
-          "minItems": 23,
-          "maxItems": 23
+          "minItems": 1
         },
         "boundaries": {
           "$ref": "#/$defs/Boundaries"
@@ -503,6 +521,8 @@
               "type": "string",
               "pattern": "^[a-f0-9]{64}$"
             },
+            "attribution": { "type": "string" },
+            "license_url": { "type": "string" },
             "road_model": {
               "type": "string"
             }
@@ -510,6 +530,8 @@
           "required": [
             "boundary_source_url",
             "boundary_sha256",
+            "attribution",
+            "license_url",
             "road_model"
           ],
           "additionalProperties": false
@@ -524,6 +546,84 @@
         "provenance"
       ],
       "additionalProperties": false
+    },
+    "StreetNetwork": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "FeatureCollection"
+        },
+        "features": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "Feature"
+              },
+              "properties": {
+                "type": "object",
+                "properties": {
+                  "osm_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "highway": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "class": {
+                    "enum": [
+                      "major",
+                      "arterial",
+                      "local"
+                    ]
+                  }
+                },
+                "required": [
+                  "osm_id",
+                  "highway",
+                  "class"
+                ]
+              },
+              "geometry": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "const": "LineString"
+                  },
+                  "coordinates": {
+                    "type": "array",
+                    "minItems": 2,
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 2,
+                      "maxItems": 2
+                    }
+                  }
+                },
+                "required": [
+                  "type",
+                  "coordinates"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "properties",
+              "geometry"
+            ]
+          }
+        }
+      },
+      "required": [
+        "type",
+        "features"
+      ]
     },
     "HealthResponse": {
       "type": "object",

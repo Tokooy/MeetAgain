@@ -5,11 +5,11 @@ use meetagain::{
 };
 
 #[derive(Parser)]
-#[command(
-    version,
-    about = "MeetAgain: independent lives on Jiangsu's city road graph"
-)]
+#[command(version, about = "MeetAgain: independent lives between cities")]
 struct Cli {
+    /// Directory containing map.json and the city street data.
+    #[arg(long, global = true)]
+    map_dir: Option<std::path::PathBuf>,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -59,13 +59,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_writer(std::io::stderr)
         .init();
     let cli = Cli::parse();
+    let load_graph = || match &cli.map_dir {
+        Some(directory) => RoadGraph::load_dir(directory),
+        None => RoadGraph::bundled(),
+    };
     match cli.command {
         Some(Command::Serve {
             address,
             static_dir,
-        }) => meetagain::api::serve(address, static_dir).await?,
+        }) => meetagain::api::serve(address, static_dir, load_graph()?).await?,
         Some(Command::Graph) => {
-            let graph = RoadGraph::jiangsu()?;
+            let graph = load_graph()?;
             println!(
                 "{} nodes, {} undirected edges",
                 graph.cities.len(),
@@ -77,7 +81,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .iter()
                     .map(|(j, d)| format!("{} ({d:.1} km)", graph.cities[*j].name))
                     .collect();
-                println!("{}: {}", city.name, adjacent.join(", "));
+                println!(
+                    "{} ({} street segments): {}",
+                    city.name,
+                    city.street_segments,
+                    adjacent.join(", ")
+                );
             }
         }
         Some(Command::Simulate {
@@ -107,7 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cross_tick_tolerance: 0,
                 },
             };
-            let result = simulate(&RoadGraph::jiangsu()?, &config)?;
+            let result = simulate(&load_graph()?, &config)?;
             serde_json::to_writer_pretty(std::io::stdout().lock(), &result)?;
         }
         None => println!(

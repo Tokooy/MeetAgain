@@ -1,16 +1,18 @@
-# API contract — confirmed
+# API contract
 
-Confirmed by the user before module 4. [JSON Schemas](api.schema.json) define all request and
-response shapes under `$defs`; select the named definition in the table.
+[JSON Schemas](api.schema.json) define the request and response shapes under
+`$defs`; select the named definition in the table.
 
 | Method | Path | Success | Request | Response schema |
 |---|---|---|---|---|
 | GET | `/api/health` | 200 | none | HealthResponse |
 | GET | `/api/graph` | 200 | none | GraphResponse |
+| GET | `/api/map/roads/{city_id}` | 200 | none | StreetNetwork |
 | POST | `/api/simulations` | 201 | SimulationRequest | SimulationResponse |
 | GET | `/api/simulations/{id}/encounters?cursor=…&limit=100` | 200 | query | EncounterPage |
 
-All API routes use JSON, including errors (`ApiError`). Unknown API paths must
+API routes use JSON and return errors as `ApiError`. The road endpoint serves
+GeoJSON. Unknown API paths must
 return JSON 404, never the SPA fallback. JSON responses use UTF-8. Methods other
 than the listed method return 405. Malformed JSON returns 400, a non-JSON media
 type 415, invalid fields/config 422, body over 16 KiB 413, missing/expired result
@@ -90,17 +92,23 @@ handle expiry and expose download of the result while available.
 
 ## Graph
 
-City IDs are six-digit strings. Center and polygon coordinates use
-`[longitude, latitude]`. Backend normalizes boundary feature properties to
-`city_id` and `name`; frontend joins features to nodes using `city_id`.
-`graph_version` identifies the versioned model and checksum of both source data
-and road edges. `coordinate_reference` explicitly describes the source-native
-frame with undocumented datum; no external basemap is registered to it.
-`provenance` contains exact source URL, boundary SHA-256, and the approximate
-manual-road model description. Boundaries and edges come only from HTTP, never
-from frontend imports of backend files. GET graph has exactly 13 nodes and 23
-undirected edges; each edge appears once. Edge weights approximate spherical
-center distances, not measured road lengths or travel times.
+City IDs match `^[a-z0-9][a-z0-9_-]{0,31}$`. Center, boundary and road
+coordinates use WGS84 `[longitude, latitude]`. Boundary feature properties
+contain `city_id` and `name`. Nodes include the OSM boundary relation, extract
+URL, replication timestamp (when available), and street segment count.
+`graph_version` includes the city list, boundaries, simulation links and
+street data. The default map has three cities and three undirected links.
+Edge weights are approximate spherical distances between city centers. The
+active set comes from `map.json` in the selected map directory.
+
+`GET /api/map/roads/{city_id}` returns a `FeatureCollection` of clipped
+OSM `LineString` features as `application/geo+json`, with gzip negotiated
+through `Accept-Encoding`. Required feature properties are `osm_id` (way
+ID), `highway` (OSM tag), and `class` (`major`, `arterial`, or `local`).
+Where present, the import preserves `name`, `ref`, `bridge`, `tunnel`,
+and `oneway`. Clipping may produce more than one feature per way. Unknown
+or inactive city IDs return JSON 404. See the [README](../README.md#添加城市)
+for the city import interface.
 
 ## Errors
 

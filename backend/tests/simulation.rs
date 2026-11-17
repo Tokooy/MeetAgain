@@ -18,7 +18,7 @@ fn config() -> SimulationConfig {
 
 #[test]
 fn identical_seed_and_config_reproduce_every_output_field() {
-    let g = RoadGraph::jiangsu().unwrap();
+    let g = RoadGraph::bundled().unwrap();
     let c = config();
     let a = simulate(&g, &c).unwrap();
     assert_eq!(a, simulate(&g, &c).unwrap());
@@ -29,7 +29,7 @@ fn identical_seed_and_config_reproduce_every_output_field() {
 
 #[test]
 fn every_trajectory_and_encounter_agrees_with_independent_reconstruction() {
-    let g = RoadGraph::jiangsu().unwrap();
+    let g = RoadGraph::bundled().unwrap();
     let c = config();
     let r = simulate(&g, &c).unwrap();
     for a in &r.agents {
@@ -117,7 +117,7 @@ fn every_trajectory_and_encounter_agrees_with_independent_reconstruction() {
 
 #[test]
 fn zero_movement_stays_home_and_tick_zero_is_explicit() {
-    let g = RoadGraph::jiangsu().unwrap();
+    let g = RoadGraph::bundled().unwrap();
     let mut c = config();
     c.ticks = 5;
     c.movement.home_move_probability = 0.0;
@@ -127,7 +127,7 @@ fn zero_movement_stays_home_and_tick_zero_is_explicit() {
             .iter()
             .all(|a| a.move_count == 0 && a.distance_km == 0.0 && a.visited_city_ids.len() == 1)
     );
-    // 20 people in 13 cities guarantees a pair even without movement.
+    // 20 people in three cities guarantees a pair even without movement.
     assert_eq!(r.summary.first_encounter_tick, Some(1));
     let per_tick = r.encounters.iter().filter(|e| e.tick == 1).count();
     assert_eq!(r.encounters.len(), per_tick * 5);
@@ -177,7 +177,7 @@ fn invalid_parameters_fail_before_simulation() {
     c.agents = 100;
     c.ticks = 1000;
     cases.push(c);
-    let g = RoadGraph::jiangsu().unwrap();
+    let g = RoadGraph::bundled().unwrap();
     for c in cases {
         assert!(simulate(&g, &c).is_err(), "accepted invalid config: {c:?}");
     }
@@ -188,7 +188,7 @@ fn invalid_parameters_fail_before_simulation() {
 
 #[test]
 fn shared_hometown_sets_every_initial_position_and_remains_reproducible() {
-    let graph = RoadGraph::jiangsu().unwrap();
+    let graph = RoadGraph::bundled().unwrap();
     let mut config = config();
     config.same_hometown = true;
     config.start_date = Some("2027-01-01".into());

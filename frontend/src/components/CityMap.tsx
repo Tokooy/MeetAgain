@@ -8,7 +8,7 @@ import type {
 import type { FeatureCollection, Point, LineString } from "geojson";
 import { Expand, MapPin } from "lucide-react";
 import { useView } from "../store";
-import type { Graph, Simulation } from "../types";
+import type { City, Graph, Simulation } from "../types";
 import "maplibre-gl/dist/maplibre-gl.css";
 import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(mapWorkerUrl);
@@ -18,27 +18,56 @@ interface Props {
   result?: Simulation;
 }
 const empty: FeatureCollection = { type: "FeatureCollection", features: [] };
+const streetLayers = {
+  local: {
+    minZoom: 10.5,
+    overviewWidth: 0.65,
+    detailWidth: 1.35,
+    opacity: 0.51,
+  },
+  arterial: {
+    minZoom: 7.5,
+    overviewWidth: 0.75,
+    detailWidth: 2.1,
+    opacity: 0.73,
+  },
+  major: { minZoom: 0, overviewWidth: 1.05, detailWidth: 3.0, opacity: 0.85 },
+} as const;
+type StreetClass = keyof typeof streetLayers;
+const streetClasses = Object.keys(streetLayers) as StreetClass[];
+const streetLayerId = (cityId: string, roadClass: StreetClass) =>
+  `street-${roadClass}-${cityId}`;
+const fitPadding = { top: 86, bottom: 86, left: 28, right: 28 };
 const colors = {
   dark: {
-    fill: "#203a40",
-    stroke: "#49646a",
-    road: "#64878b",
+    fill: "#1c3338",
+    stroke: "#607c7a",
+    link: "#8dc3b5",
+    streets: { major: "#dbaf6e", arterial: "#7da6a0", local: "#6f8b88" },
     node: "#a9c6c9",
     trail: "#87dfc9",
   },
   light: {
-    fill: "#d9e6e3",
-    stroke: "#849f9a",
-    road: "#7c9690",
+    fill: "#e2ece7",
+    stroke: "#72928a",
+    link: "#3a7067",
+    streets: { major: "#ad7427", arterial: "#617b74", local: "#6f8882" },
     node: "#365b55",
     trail: "#087969",
   },
 };
-function recolor(map: LibreMap, theme: "dark" | "light") {
+function recolor(map: LibreMap, theme: "dark" | "light", cities: City[]) {
   const p = colors[theme];
   map.setPaintProperty("boundaries-fill", "fill-color", p.fill);
   map.setPaintProperty("boundaries-outline", "line-color", p.stroke);
-  map.setPaintProperty("roads", "line-color", p.road);
+  map.setPaintProperty("city-links", "line-color", p.link);
+  for (const city of cities)
+    for (const roadClass of streetClasses)
+      map.setPaintProperty(
+        streetLayerId(city.id, roadClass),
+        "line-color",
+        p.streets[roadClass],
+      );
   map.setPaintProperty("cities", "circle-color", p.node);
   map.setPaintProperty("trail", "line-color", p.trail);
   map.setPaintProperty(
@@ -68,6 +97,7 @@ export default function CityMap({ graph, result }: Props) {
   const previous = useRef(new Map<number, [number, number]>());
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
+  const [focusedCity, setFocusedCity] = useState("");
   const { tick, theme, selectedAgent } = useView();
   const reduced = useRef(
     window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -84,13 +114,18 @@ export default function CityMap({ graph, result }: Props) {
     if (!container.current) return;
     let instance: LibreMap;
     const markers: maplibregl.Marker[] = [];
+    let roadPopup: maplibregl.Popup | undefined;
+    const roadLayerIds = graph.nodes.flatMap((city) =>
+      streetClasses.map((roadClass) => streetLayerId(city.id, roadClass)),
+    );
     const onContextLost = () => setError(true);
     try {
       instance = new maplibregl.Map({
         container: container.current,
         style: { version: 8, sources: {}, layers: [] },
-        center: [119.2, 33],
-        zoom: 5.6,
+        bounds: modelBounds(graph),
+        fitBoundsOptions: { padding: fitPadding, duration: 0 },
+        renderWorldCopies: false,
         attributionControl: false,
         dragRotate: false,
         touchPitch: false,
@@ -101,6 +136,14 @@ export default function CityMap({ graph, result }: Props) {
       instance.on("error", () => setError(true));
       instance.on("idle", () => {
         if (
+          container.current?.dataset.streetsRendered !== "true" &&
+          roadLayerIds.every((id) => instance.getLayer(id)) &&
+          instance.queryRenderedFeatures({ layers: roadLayerIds }).length > 0
+        ) {
+          container.current?.setAttribute("data-streets-rendered", "true");
+        }
+        if (
+          container.current?.dataset.rendered !== "true" &&
           instance.getLayer("boundaries-fill") &&
           instance.queryRenderedFeatures({ layers: ["boundaries-fill"] })
             .length > 0
@@ -125,7 +168,42 @@ export default function CityMap({ graph, result }: Props) {
           source: "boundaries",
           paint: { "line-color": "#49646a", "line-width": 1 },
         });
-        const roads: FeatureCollection<LineString> = {
+        const palette = colors[useView.getState().theme];
+        for (const city of graph.nodes) {
+          instance.addSource(`street-data-${city.id}`, {
+            type: "geojson",
+            data: `/api/map/roads/${city.id}`,
+            maxzoom: 14,
+          });
+        }
+        for (const roadClass of streetClasses) {
+          const { minZoom, overviewWidth, detailWidth, opacity } =
+            streetLayers[roadClass];
+          for (const city of graph.nodes) {
+            instance.addLayer({
+              id: streetLayerId(city.id, roadClass),
+              type: "line",
+              source: `street-data-${city.id}`,
+              minzoom: minZoom,
+              filter: ["==", ["get", "class"], roadClass],
+              layout: { "line-join": "round", "line-cap": "round" },
+              paint: {
+                "line-color": palette.streets[roadClass],
+                "line-width": [
+                  "interpolate",
+                  ["linear"],
+                  ["zoom"],
+                  8,
+                  overviewWidth,
+                  14,
+                  detailWidth,
+                ],
+                "line-opacity": opacity,
+              },
+            });
+          }
+        }
+        const links: FeatureCollection<LineString> = {
           type: "FeatureCollection",
           features: graph.edges.map((e) => ({
             type: "Feature",
@@ -136,15 +214,15 @@ export default function CityMap({ graph, result }: Props) {
             },
           })),
         };
-        instance.addSource("roads", { type: "geojson", data: roads });
+        instance.addSource("city-links", { type: "geojson", data: links });
         instance.addLayer({
-          id: "roads",
+          id: "city-links",
           type: "line",
-          source: "roads",
+          source: "city-links",
           paint: {
-            "line-color": "#64878b",
-            "line-width": 1.3,
-            "line-opacity": 0.65,
+            "line-color": palette.link,
+            "line-width": 1.6,
+            "line-opacity": 0.82,
             "line-dasharray": [3, 3],
           },
         });
@@ -157,6 +235,7 @@ export default function CityMap({ graph, result }: Props) {
             "line-color": "#87dfc9",
             "line-width": 2.5,
             "line-opacity": ["get", "opacity"],
+            "line-dasharray": [2, 1.5],
           },
         });
         const cities: FeatureCollection<Point> = {
@@ -209,7 +288,7 @@ export default function CityMap({ graph, result }: Props) {
         for (const city of graph.nodes) {
           const label = document.createElement("span");
           label.className = "city-name";
-          label.textContent = city.name.replace("市", "");
+          label.textContent = city.name;
           markers.push(
             new maplibregl.Marker({
               element: label,
@@ -230,11 +309,29 @@ export default function CityMap({ graph, result }: Props) {
         instance.on("mouseleave", "agents", () => {
           instance.getCanvas().style.cursor = "";
         });
-        recolor(instance, useView.getState().theme);
-        instance.fitBounds(modelBounds(graph), {
-          padding: { top: 72, bottom: 96, left: 44, right: 44 },
-          duration: 0,
+        instance.on("click", (event) => {
+          if (
+            instance.queryRenderedFeatures(event.point, { layers: ["agents"] })
+              .length
+          )
+            return;
+          const properties = instance.queryRenderedFeatures(event.point, {
+            layers: roadLayerIds,
+          })[0]?.properties;
+          if (!properties) return;
+          roadPopup?.remove();
+          const label =
+            [properties.name, properties.ref].filter(Boolean).join(" · ") ||
+            `OpenStreetMap 路段 #${properties.osm_id}`;
+          roadPopup = new maplibregl.Popup({
+            offset: 8,
+            className: "street-popup",
+          })
+            .setLngLat(event.lngLat)
+            .setText(label)
+            .addTo(instance);
         });
+        recolor(instance, useView.getState().theme, graph.nodes);
         setReady(true);
       });
     } catch {
@@ -247,6 +344,7 @@ export default function CityMap({ graph, result }: Props) {
       cancelAnimationFrame(animation.current);
       observer.disconnect();
       markers.forEach((m) => m.remove());
+      roadPopup?.remove();
       instance
         .getCanvas()
         .removeEventListener("webglcontextlost", onContextLost);
@@ -256,8 +354,8 @@ export default function CityMap({ graph, result }: Props) {
     };
   }, [graph]);
   useEffect(() => {
-    if (ready && map.current) recolor(map.current, theme);
-  }, [theme, ready]);
+    if (ready && map.current) recolor(map.current, theme, graph.nodes);
+  }, [theme, ready, graph.nodes]);
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance) return;
@@ -331,33 +429,54 @@ export default function CityMap({ graph, result }: Props) {
     (instance.getSource("trail") as GeoJSONSource).setData(trail);
     return () => cancelAnimationFrame(animation.current);
   }, [tick, result, ready, selectedAgent, graph]);
+  function focusCity(id: string) {
+    setFocusedCity(id);
+    const city = graph.nodes.find((node) => node.id === id);
+    const duration = reduced.current ? 0 : 300;
+    if (city)
+      map.current?.easeTo({ center: city.center, zoom: 11.7, duration });
+    else
+      map.current?.fitBounds(modelBounds(graph), {
+        padding: fitPadding,
+        duration,
+      });
+  }
+
   return (
     <div className="map-shell">
       <div
         className="map-canvas"
         ref={container}
         role="img"
-        aria-label="江苏十三市边界、道路网络和个体位置地图"
+        aria-label="城市边界、街道和个体位置地图"
         data-testid="city-map"
         data-ready={ready}
       />
       <div className="map-heading">
         <span className="live-dot" />
-        JIANGSU · 江苏省<span className="map-model">城市级道路模型</span>
+        城市道路网
+        <select
+          aria-label="缩放到城市"
+          disabled={!ready}
+          value={focusedCity}
+          onChange={(event) => focusCity(event.target.value)}
+        >
+          <option value="">全部城市</option>
+          {graph.nodes.map((city) => (
+            <option key={city.id} value={city.id}>
+              {city.name}
+            </option>
+          ))}
+        </select>
       </div>
       <div className="map-compass" aria-hidden="true">
         <span>N</span>↑
       </div>
       <button
         className="icon-button fit-map"
-        aria-label="显示完整江苏地图"
+        aria-label="显示全部城市"
         disabled={!ready}
-        onClick={() =>
-          map.current?.fitBounds(modelBounds(graph), {
-            padding: { top: 72, bottom: 96, left: 44, right: 44 },
-            duration: reduced.current ? 0 : 250,
-          })
-        }
+        onClick={() => focusCity("")}
       >
         <Expand size={16} />
       </button>
@@ -369,7 +488,7 @@ export default function CityMap({ graph, result }: Props) {
       )}
       {error && (
         <div className="map-error" role="alert">
-          地图暂不可用，请检查浏览器 WebGL 支持。轨迹和事件仍可查看。
+          地图加载失败。请刷新页面，或检查浏览器的 WebGL 支持。
         </div>
       )}
       <div className="map-legend">
@@ -378,8 +497,12 @@ export default function CityMap({ graph, result }: Props) {
           城市中心
         </span>
         <span>
+          <i className="legend-street" />
+          实际道路
+        </span>
+        <span>
           <i className="legend-road" />
-          道路连接
+          模拟连线
         </span>
         {result && (
           <span>
@@ -388,9 +511,14 @@ export default function CityMap({ graph, result }: Props) {
           </span>
         )}
       </div>
-      <span className="map-coordinate-note">
-        示意边界 · 点位偏移仅用于区分个体
-      </span>
+      <a
+        className="map-attribution"
+        href={graph.provenance.license_url}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {graph.provenance.attribution}
+      </a>
     </div>
   );
 }
