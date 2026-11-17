@@ -147,7 +147,7 @@ fn invalid_parameters_fail_before_simulation() {
         c.agents = n;
         cases.push(c);
     }
-    for ticks in [0, 1001, u32::MAX] {
+    for ticks in [0, 5301, u32::MAX] {
         let mut c = config();
         c.ticks = ticks;
         cases.push(c);

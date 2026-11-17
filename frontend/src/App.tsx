@@ -84,7 +84,6 @@ export default function App() {
       </header>
       <div className="intro-bar">
         <div>
-          <p className="eyebrow">AN EXPERIMENT IN CHANCE</p>
           <h1>
             各自生活，还会再相逢吗<span>？</span>
           </h1>
@@ -200,7 +199,7 @@ export default function App() {
         <ul>
           <li>
             <Check size={14} />
-            同一步在同一座城市，记录一次相遇。
+            同一天在同一座城市，记录一次相遇。
           </li>
           <li>
             <Check size={14} />
@@ -208,7 +207,7 @@ export default function App() {
           </li>
           <li>
             <Check size={14} />
-            一步最多移动一条边，不表示固定小时或天数。
+            每个模拟日作一次出行决定，最多沿一条边移动。实际行程所需的时间不在模型中计算。
           </li>
         </ul>
         <p>

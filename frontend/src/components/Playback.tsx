@@ -49,7 +49,7 @@ export function Playback({ ticks, enabled }: Props) {
         </label>
         <input
           id="tick"
-          aria-label="当前步数"
+          aria-label="当前天数"
           type="range"
           min="0"
           max={Math.max(1, ticks)}
@@ -61,7 +61,7 @@ export function Playback({ ticks, enabled }: Props) {
           }}
         />
       </div>
-      <span className="tick-label">TICK</span>
+      <span className="tick-label">DAY</span>
     </div>
   );
 }

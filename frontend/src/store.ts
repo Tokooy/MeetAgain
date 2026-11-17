@@ -2,11 +2,11 @@ import { create } from "zustand";
 export type Theme = "dark" | "light";
 function initialTheme(): Theme {
   try {
-    return localStorage.getItem("meetagain-theme") === "light"
-      ? "light"
-      : "dark";
+    return localStorage.getItem("meetagain-theme") === "dark"
+      ? "dark"
+      : "light";
   } catch {
-    return "dark";
+    return "light";
   }
 }
 interface ViewState {

@@ -8,6 +8,8 @@ interface Props {
   onStart: (config: Config) => void;
   onReset: () => void;
 }
+const MAX_DAYS = 5300;
+const MAX_PAIR_CHECKS = 500_000;
 const defaults = {
   agents: "20",
   ticks: "365",
@@ -20,15 +22,17 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
   const [values, setValues] = useState(defaults);
   const [initial, setInitial] = useState(false);
   const [advanced, setAdvanced] = useState(false);
-  const budget =
-    ((Number(values.agents) * (Number(values.agents) - 1)) / 2) *
-    (Number(values.ticks) + Number(initial));
+  const agents = Number(values.agents);
+  const pairsPerDay = (agents * (agents - 1)) / 2;
+  const budget = pairsPerDay * (Number(values.ticks) + Number(initial));
+  const maxDaysForAgents =
+    Math.floor(MAX_PAIR_CHECKS / pairsPerDay) - Number(initial);
   const seedValid =
     /^[0-9]{1,20}$/.test(values.seed) &&
     BigInt(values.seed) <= 18446744073709551615n;
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (budget > 500000 || !seedValid || busy || !ready) return;
+    if (budget > MAX_PAIR_CHECKS || !seedValid || busy || !ready) return;
     onStart({
       agents: Number(values.agents),
       ticks: Number(values.ticks),
@@ -75,29 +79,28 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
           </label>
           <label className="field">
             <span>
-              观察时长 <small>TICKS</small>
+              观察时长 <small>DAYS</small>
             </span>
             <div className="number-wrap">
               <input
                 aria-label="观察时长"
                 type="number"
                 min="1"
-                max="1000"
+                max={MAX_DAYS}
                 required
                 value={values.ticks}
                 onChange={(e) =>
                   setValues({ ...values, ticks: e.target.value })
                 }
               />
-              <span>步</span>
+              <span>天</span>
             </div>
           </label>
           <label className="field">
-            <span>
-              随机种子 <small>SEED</small>
-            </span>
+            <span>旅程编号</span>
             <input
-              aria-label="随机种子"
+              aria-label="旅程编号"
+              aria-describedby="journey-code-hint"
               className="seed-input"
               type="text"
               inputMode="numeric"
@@ -108,7 +111,9 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
               onChange={(e) => setValues({ ...values, seed: e.target.value })}
             />
           </label>
-          <p className="field-hint">同一组参数与种子，可重现同一段旅程。</p>
+          <p className="field-hint" id="journey-code-hint">
+            编号和设置相同，模拟结果就相同。想试试不同的旅程，可以换个编号。
+          </p>
           <button
             className="advanced-toggle"
             type="button"
@@ -155,20 +160,21 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
               </label>
             </div>
           )}
-          {budget > 500000 && (
+          {budget > MAX_PAIR_CHECKS && (
             <p className="error" role="alert">
-              人数与步数的组合超过 500,000 次成对检查，请减少人数或步数。
+              当前人数和观察天数的组合超过模拟上限。请减少人数，或将观察时长缩短至{" "}
+              {maxDaysForAgents.toLocaleString("zh-CN")} 天以内。
             </p>
           )}
           {!seedValid && (
             <p className="error" role="alert">
-              种子须为 0 至 18446744073709551615 的整数。
+              旅程编号须为 0 至 18446744073709551615 的整数。
             </p>
           )}
           <button
             className="primary-button"
             type="submit"
-            disabled={busy || !ready || budget > 500000 || !seedValid}
+            disabled={busy || !ready || budget > MAX_PAIR_CHECKS || !seedValid}
           >
             {busy ? "正在推演…" : "开始模拟"}
             <ArrowUpRight size={18} />
@@ -192,7 +198,7 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
           <div>
             <strong>怎样算一次相遇？</strong>
             <p>
-              同一步、同一座城市，即记录一次相遇。不计擦肩而过，也不跨步匹配。
+              同一天在同一座城市，就记录一次相遇。只比较每天的位置，途中交叉不计。
             </p>
           </div>
         </div>

@@ -119,7 +119,7 @@ export function Results({
                 <strong>
                   {result.summary.first_encounter_tick ?? "—"}
                   <small>
-                    {result.summary.first_encounter_tick === null ? "" : "步"}
+                    {result.summary.first_encounter_tick === null ? "" : "天"}
                   </small>
                 </strong>
                 <p>同一时刻，同一座城</p>
@@ -129,7 +129,7 @@ export function Results({
               <span>全员同时相聚</span>
               <b>
                 {result.summary.all_agents_met
-                  ? `第 ${result.summary.first_all_agents_tick} 步`
+                  ? `第 ${result.summary.first_all_agents_tick} 天`
                   : "本次未发生"}
               </b>
             </div>
@@ -190,7 +190,7 @@ export function Results({
                       content={({ active, payload }) =>
                         active && payload?.length ? (
                           <div className="chart-tooltip">
-                            第 {String(payload[0].payload.tick)} 步起：
+                            第 {String(payload[0].payload.tick)} 天起：
                             {String(payload[0].value)} 次
                           </div>
                         ) : null
@@ -258,7 +258,7 @@ export function Results({
                             setPlaying(false);
                           }}
                         >
-                          第 {p.tick} 步<span>{cityName(p.city_id)}</span>
+                          第 {p.tick} 天<span>{cityName(p.city_id)}</span>
                         </button>
                       </li>
                     ))}
@@ -284,7 +284,7 @@ export function Results({
                       >
                         <span className="event-tick">
                           {String(e.tick).padStart(3, "0")}
-                          <small>TICK</small>
+                          <small>DAY</small>
                         </span>
                         <span className="event-body">
                           <b>{cityName(e.city_id)}</b>
@@ -296,7 +296,7 @@ export function Results({
                         </span>
                         <ArrowUpRight size={14} aria-hidden="true" />
                         <span className="sr-only">
-                          ，跳至第 {e.tick} 步相遇事件 {i + 1}
+                          ，跳至第 {e.tick} 天相遇事件 {i + 1}
                         </span>
                       </button>
                     ))}
@@ -341,7 +341,7 @@ export function Results({
               </button>
             </div>
             <p className="result-footnote">
-              完整模拟结果，不随回放进度改变。有限步数内未相遇，不代表永远不会相逢。个体显示编号从
+              完整模拟结果，不随回放进度改变。观察期内未相遇，不代表永远不会相逢。个体显示编号从
               01 开始；导出 ID 从 0 开始。
             </p>
           </>

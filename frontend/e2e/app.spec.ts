@@ -21,10 +21,8 @@ test("map, simulation, playback, filtering, download and reset work through real
     (await page.getByTestId("city-map").boundingBox())!.height,
   ).toBeGreaterThan(350);
   await expect(page.locator(".city-name").first()).toBeInViewport();
-  await page.screenshot({
-    path: "test-results/desktop-dark.png",
-    fullPage: true,
-  });
+  expect((await page.locator(".workspace").boundingBox())!.y).toBeLessThan(140);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.getByRole("button", { name: "开始模拟" }).click();
   await expect(page.getByTestId("pair-count")).toHaveText("152对");
   await expect(page.getByText("5,207 次事件")).toBeVisible();
@@ -33,13 +31,13 @@ test("map, simulation, playback, filtering, download and reset work through real
   ).toBeEnabled();
   await page.getByRole("button", { name: "播放轨迹", exact: true }).click();
   await expect
-    .poll(() => page.getByLabel("当前步数", { exact: true }).inputValue())
+    .poll(() => page.getByLabel("当前天数", { exact: true }).inputValue())
     .not.toBe("0");
   await page.getByRole("button", { name: "暂停播放", exact: true }).click();
   await page.getByLabel("跟随一位同行者", { exact: true }).selectOption("0");
   await expect(page.getByText("个体 01 的旅程")).toBeVisible();
-  await page.getByLabel("当前步数", { exact: true }).fill("100");
-  await expect(page.getByLabel("当前步数", { exact: true })).toHaveValue("100");
+  await page.getByLabel("当前天数", { exact: true }).fill("100");
+  await expect(page.getByLabel("当前天数", { exact: true })).toHaveValue("100");
   const downloadEvent = page.waitForEvent("download");
   await page.getByRole("button", { name: "完整结果", exact: true }).click();
   const download = await downloadEvent;
@@ -62,8 +60,6 @@ test("map, simulation, playback, filtering, download and reset work through real
     path: "test-results/desktop-result.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "切换浅色主题" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.screenshot({
     path: "test-results/desktop-light.png",
     fullPage: true,
@@ -80,6 +76,15 @@ test("map, simulation, playback, filtering, download and reset work through real
   await expect(
     page.getByRole("button", { name: "播放轨迹", exact: true }),
   ).toBeDisabled();
+  await page.getByRole("button", { name: "切换深色主题" }).click();
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.screenshot({
+    path: "test-results/desktop-dark.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "切换浅色主题" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   expect(errors).toEqual([]);
 });
 
@@ -98,8 +103,20 @@ test("mobile layout collapses, respects reduced motion and has no horizontal ove
   ).not.toHaveAttribute("open");
   await page.getByText("实验设置", { exact: true }).click();
   await page.getByLabel("同行人数", { exact: true }).fill("4");
-  await page.getByLabel("观察时长", { exact: true }).fill("20");
+  await page.getByLabel("观察时长", { exact: true }).fill("5300");
+  await page.getByLabel("旅程编号", { exact: true }).fill("42");
+  const simulation = page.waitForResponse("**/api/simulations");
   await page.getByRole("button", { name: "开始模拟" }).click();
+  const response = await simulation;
+  expect(response.status()).toBe(201);
+  expect((await response.json()).config).toMatchObject({
+    ticks: 5300,
+    seed: "42",
+  });
+  await expect(page.getByLabel("当前天数", { exact: true })).toHaveAttribute(
+    "max",
+    "5300",
+  );
   await page.getByText("观察结果", { exact: true }).click();
   await expect(page.getByTestId("pair-count")).toBeVisible();
   expect(

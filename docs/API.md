@@ -38,10 +38,12 @@ details. A normal POST completes the run before returning (no background job API
 ```
 
 All fields required; unknown properties rejected. Probabilities finite in [0,1].
-2–100 agents, 1–1000 ticks. Seed is decimal u64 encoded as a string; additionally
-validate its numeric upper bound (18446744073709551615). Reject workloads where
+2–100 agents and 1–5300 simulated days. Each tick represents one simulated day;
+tick 0 is the initial placement. The UI calls the seed a journey code. It is a
+decimal u64 encoded as a string, with maximum 18446744073709551615. Reject workloads where
 `agents * (agents - 1) / 2 * (ticks + include_tick_zero)` exceeds 500000.
-The JSON Schema does not express these two cross-field/numeric-string checks.
+At 5300 days, the workload limit allows at most 14 agents. The JSON Schema does
+not express the workload check or the numeric upper bound of the seed string.
 
 ## Results and event pagination
 

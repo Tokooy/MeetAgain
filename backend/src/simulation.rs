@@ -1,4 +1,4 @@
-//! Synchronous independent agents; one edge per tick, with no communication.
+//! Synchronous independent agents; one edge per simulated day, with no communication.
 use crate::graph::RoadGraph;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -58,8 +58,8 @@ impl SimulationConfig {
         if !(2..=100).contains(&self.agents) {
             return Err(invalid("agents", "must be between 2 and 100"));
         }
-        if !(1..=1000).contains(&self.ticks) {
-            return Err(invalid("ticks", "must be between 1 and 1000"));
+        if !(1..=5300).contains(&self.ticks) {
+            return Err(invalid("ticks", "must be between 1 and 5300"));
         }
         for (field, p) in [
             (

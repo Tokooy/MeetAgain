@@ -22,8 +22,8 @@ test("real HTTP responses conform to the confirmed JSON schemas", async ({
   expect(graph.status()).toBe(200);
   conforms("GraphResponse", await graph.json());
   const config = {
-    agents: 20,
-    ticks: 20,
+    agents: 2,
+    ticks: 5300,
     seed: "20261116",
     movement: {
       home_move_probability: 0.1,
@@ -37,6 +37,7 @@ test("real HTTP responses conform to the confirmed JSON schemas", async ({
   expect(created.status()).toBe(201);
   const result = await created.json();
   conforms("SimulationResponse", result);
+  expect(result.agents[0].trajectory.at(-1).tick).toBe(5300);
   let cursor: string | null = null;
   let count = 0;
   do {
@@ -64,6 +65,11 @@ test("real HTTP responses conform to the confirmed JSON schemas", async ({
   });
   expect(bad.status()).toBe(422);
   conforms("ApiError", await bad.json());
+  const tooLong = await request.post("/api/simulations", {
+    data: { ...config, ticks: 5301 },
+  });
+  expect(tooLong.status()).toBe(422);
+  expect((await tooLong.json()).error.field).toBe("ticks");
   const malformed = await request.post("/api/simulations", {
     data: Buffer.from("{"),
     headers: { "content-type": "application/json" },
