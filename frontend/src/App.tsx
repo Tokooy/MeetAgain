@@ -126,7 +126,7 @@ export default function App() {
       <main className="workspace">
         <Controls
           busy={simulation.isPending}
-          ready={!!graph.data}
+          cities={graph.data?.nodes ?? []}
           onStart={start}
           onReset={reset}
         />
@@ -198,12 +198,13 @@ export default function App() {
         <p className="eyebrow">ABOUT THE MODEL</p>
         <h2>一次关于偶然的实验</h2>
         <p>
-          每个人从自己的家乡城市出发。可以随机为每个人分配家乡，也可以让所有人从同一座城市出发。在外地的人每天先决定是否换城市；如果决定出发，再决定是否沿最短路线往家乡走一站。其余出行偏向距离较近的相邻城市。
+          每个人第 0 天在自己的家乡。如果选了毕业后的去向，第 1
+          天到达该城市；此后每天按出行概率决定是否换城市。决定从外地出发后，可以沿最短路线往家乡走一站，也可以去其他相邻城市。
         </p>
         <ul>
           <li>
             <Check size={14} />
-            同一天在同一座城市，记录一次相遇。
+            同一天在同一条街且直线距离不超过 50 米，才记录一次相遇。
           </li>
           <li>
             <Check size={14} />
@@ -215,12 +216,12 @@ export default function App() {
           </li>
           <li>
             <Check size={14} />
-            每个模拟日作一次出行决定，最多沿一条边移动。实际行程所需的时间不在模型中计算。
+            每天在所在城市的道路上采样一次位置。只有采样时的位置用于判断相遇。
           </li>
         </ul>
         <p>
           城市边界和街道来自
-          OpenStreetMap。地图上的虚线表示模拟中的城市连接，个体点位表示所在城市。
+          OpenStreetMap。地图上的虚线表示模拟中的城市连接，个体点位表示当天采样的道路位置。
         </p>
         <p>
           有限模拟中的结果不等于现实预测。“至少一对相遇”和“全员同时相聚”会分别报告。事件缓存保留

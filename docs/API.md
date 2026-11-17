@@ -24,9 +24,13 @@ details. A normal POST completes the run before returning (no background job API
 
 ```json
 {
-  "agents": 20,
+  "agents": 2,
   "ticks": 365,
   "start_date": "2026-11-16",
+  "participants": [
+    { "home_city_id": "320100", "graduation_city_id": "321100" },
+    { "home_city_id": "321000", "graduation_city_id": "320100" }
+  ],
   "movement": {
     "home_move_probability": 0.1,
     "away_move_probability": 0.25,
@@ -46,8 +50,16 @@ tick 0 is the initial placement. Reject workloads where
 At 5300 days, the workload limit allows at most 14 agents. The JSON Schema does
 not express the workload check or the numeric upper bound of the seed string.
 
-`same_hometown: true` randomly selects one city as every traveler's hometown and
-initial position. Movement decisions remain independent. `start_date` is a
+`participants` is optional. A nonempty array has one entry per agent, in agent
+ID order. Its `home_city_id` places the agent in that hometown at tick 0; absent
+or null means random. Its `graduation_city_id` sends that agent directly to that
+city at tick 1; absent or null uses the ordinary movement decision. These IDs
+must be active cities. A graduation move counts as one city change and adds the
+shortest city-link distance, even when it spans multiple links.
+
+With `same_hometown: true`, all specified home cities must agree. The single
+specified city, or a random city if none is specified, applies to everyone.
+Graduation cities remain independent. `start_date` is a
 Gregorian `YYYY-MM-DD` date for tick 0. It identifies the trip and seeds the
 random generator with the date as a YYYYMMDD integer, taking precedence over any
 supplied `seed`. The whole simulation, including the final tick, must fall within
@@ -66,19 +78,30 @@ The conversion is checked against the [Hong Kong Observatory calendar](https://w
 `SimulationResponse` contains `id`, `graph_version`, echoed `config`, `summary`,
 and `agents`. IDs are opaque server-issued strings, separate from the seed;
 simulation results and event ordering are reproducible, not HTTP IDs. Agents
-numbered from 0. All distances in km. Nullable first ticks use null, never -1.
-Each trajectory includes initial tick 0 and all ticks through requested `ticks`.
-`visited_city_ids` preserves first-visit order. Every move follows exactly one
-edge; distances do not create in-transit ticks. No agent sees another's position.
+numbered from 0. `graduation_city_id` is null when there was no preset move.
+Each trajectory includes tick 0 and all ticks through the requested duration.
+Each tick has the city ID, a point sampled along an OSM road in WGS84
+`[longitude, latitude]`, its `osm_way_id`, and its `street_id` and optional
+`street_name`. Street positions are sampled by road length each day, including
+days with no city change. `visited_city_ids` preserves first-visit order.
+`move_count` and `distance_km` describe city changes. Nullable first ticks
+use null. No agent reacts to another's position.
+
+A street groups segments of the same OSM way and connected ways that share a
+name (or, where unnamed, a route reference). Its ID is the smallest OSM way ID
+in the group. Identical names on disconnected ways do not match.
 
 `summary` fields: `any_encounter`, `unique_encounter_pairs`,
 `encounter_event_count`, `first_encounter_tick`, `all_agents_met`,
-`first_all_agents_tick`. All use the selected tick-zero rule. Repeated same-pair
-co-location counts once per tick as an event, once overall as a unique pair.
-Three agents together create three pair events, not one group event.
+`first_all_agents_tick`. All use the selected tick-zero rule. An encounter is a
+pair on the same street at the same tick with a Haversine distance of at most
+50 meters, inclusive. The pair counts once per tick, and once overall for the
+unique-pair count. A reunion requires every pair to qualify on the same tick.
 
 `EncounterPage`: `simulation_id`, `events`, `next_cursor`. An event contains
-`tick`, `city_id`, `agent_ids: [lower_id, higher_id]`. Sorted by tick, city ID,
+`tick`, `city_id`, `street_id`, `street_name` (nullable), `distance_m`, and
+`agent_ids: [lower_id, higher_id]`. The city is the lower-ID agent’s city, so a
+street crossing a city boundary can record an encounter. Sorted by tick, city ID,
 then agent IDs. `limit` defaults to 100; valid integer range 1–1000. Cursor is
 an opaque position token bound to that simulation; omit for first page. Invalid
 cursor/limit returns 422. End-of-list: `next_cursor: null`. Empty event list is

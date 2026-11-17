@@ -18,7 +18,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (!response.ok) {
     const messages: Record<number, string> = {
       404: "这次模拟已过期或服务已重启。请重新运行；当前轨迹仍可导出。",
-      422: "参数不符合要求，请检查人数、观察天数和分开日期。",
+      422: "参数不符合要求，请检查人数、日期和城市设置。",
       429: "引擎正在处理另一项模拟，请稍后重试。",
     };
     throw new ApiError(

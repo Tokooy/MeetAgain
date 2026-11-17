@@ -14,10 +14,12 @@ interface ViewState {
   tick: number;
   playing: boolean;
   selectedAgent: number | null;
+  focusPoint: [number, number] | null;
   toggleTheme: () => void;
   setTick: (tick: number) => void;
   setPlaying: (playing: boolean) => void;
   selectAgent: (id: number | null) => void;
+  focusMap: (coordinates: [number, number]) => void;
   resetView: () => void;
 }
 export const useView = create<ViewState>((set) => ({
@@ -25,6 +27,7 @@ export const useView = create<ViewState>((set) => ({
   tick: 0,
   playing: false,
   selectedAgent: null,
+  focusPoint: null,
   toggleTheme: () =>
     set((state) => {
       const theme = state.theme === "dark" ? "light" : "dark";
@@ -38,5 +41,7 @@ export const useView = create<ViewState>((set) => ({
   setTick: (tick) => set({ tick }),
   setPlaying: (playing) => set({ playing }),
   selectAgent: (selectedAgent) => set({ selectedAgent }),
-  resetView: () => set({ tick: 0, playing: false, selectedAgent: null }),
+  focusMap: (coordinates) => set({ focusPoint: [...coordinates] }),
+  resetView: () =>
+    set({ tick: 0, playing: false, selectedAgent: null, focusPoint: null }),
 }));

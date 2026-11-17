@@ -39,6 +39,9 @@ enum Command {
         /// Separation date (YYYY-MM-DD). Determines the random draws and festival timing.
         #[arg(long)]
         start_date: Option<String>,
+        /// JSON file containing one home and graduation city choice per traveler.
+        #[arg(long)]
+        participants: Option<std::path::PathBuf>,
         #[arg(long, default_value_t = 0.10)]
         home_move: f64,
         #[arg(long, default_value_t = 0.25)]
@@ -95,6 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             seed,
             same_hometown,
             start_date,
+            participants,
             home_move,
             away_move,
             home_return,
@@ -106,6 +110,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 seed,
                 same_hometown,
                 start_date,
+                participants: match participants {
+                    Some(path) => serde_json::from_slice(&std::fs::read(path)?)?,
+                    None => Vec::new(),
+                },
                 movement: Movement {
                     home_move_probability: home_move,
                     away_move_probability: away_move,

@@ -93,12 +93,10 @@ function modelBounds(graph: Graph): LngLatBoundsLike {
 export default function CityMap({ graph, result }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<LibreMap | null>(null);
-  const animation = useRef(0);
-  const previous = useRef(new Map<number, [number, number]>());
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
   const [focusedCity, setFocusedCity] = useState("");
-  const { tick, theme, selectedAgent } = useView();
+  const { tick, theme, selectedAgent, focusPoint } = useView();
   const reduced = useRef(
     window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
@@ -341,7 +339,6 @@ export default function CityMap({ graph, result }: Props) {
     const observer = new ResizeObserver(() => instance.resize());
     observer.observe(container.current);
     return () => {
-      cancelAnimationFrame(animation.current);
       observer.disconnect();
       markers.forEach((m) => m.remove());
       roadPopup?.remove();
@@ -359,76 +356,51 @@ export default function CityMap({ graph, result }: Props) {
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance) return;
-    cancelAnimationFrame(animation.current);
-    const nodes = new Map(graph.nodes.map((c) => [c.id, c.center]));
-    const destination = new Map<number, [number, number]>();
     const features: FeatureCollection<Point> = {
       type: "FeatureCollection",
       features:
-        result?.agents.map((a) => {
-          const center = nodes.get(
-            a.trajectory[Math.min(tick, a.trajectory.length - 1)].city_id,
-          )!;
-          const angle = a.id * 2.39996;
-          const radius = 0.016 + (a.id % 5) * 0.006;
-          const position: [number, number] = [
-            center[0] + Math.cos(angle) * radius,
-            center[1] + Math.sin(angle) * radius,
-          ];
-          destination.set(a.id, position);
-          return {
-            type: "Feature",
-            properties: { id: a.id, selected: a.id === selectedAgent },
-            geometry: { type: "Point", coordinates: position },
-          };
-        }) ?? [],
+        result?.agents.map((agent) => ({
+          type: "Feature",
+          properties: { id: agent.id, selected: agent.id === selectedAgent },
+          geometry: {
+            type: "Point",
+            coordinates:
+              agent.trajectory[Math.min(tick, agent.trajectory.length - 1)]
+                .coordinates,
+          },
+        })) ?? [],
     };
-    const start = performance.now();
-    function frame(now: number) {
-      const progress = reduced.current ? 1 : Math.min(1, (now - start) / 200);
-      const ease = progress * progress * (3 - 2 * progress);
-      for (const feature of features.features) {
-        const id = feature.properties?.id as number;
-        const to = destination.get(id)!;
-        const from = previous.current.get(id) ?? to;
-        feature.geometry.coordinates = [
-          from[0] + (to[0] - from[0]) * ease,
-          from[1] + (to[1] - from[1]) * ease,
-        ];
-      }
-      (instance!.getSource("agents") as GeoJSONSource).setData(features);
-      if (progress < 1) animation.current = requestAnimationFrame(frame);
-      else previous.current = destination;
-    }
-    animation.current = requestAnimationFrame(frame);
+    (instance.getSource("agents") as GeoJSONSource).setData(features);
+
     const agent = result?.agents.find((a) => a.id === selectedAgent);
     const trail: FeatureCollection<LineString> = {
       type: "FeatureCollection",
       features: [],
     };
-    if (agent && tick > 0) {
-      const positions = agent.trajectory.slice(
-        Math.max(0, tick - 12),
-        tick + 1,
-      );
-      for (let i = 1; i < positions.length; i++) {
-        if (positions[i - 1].city_id === positions[i].city_id) continue;
-        trail.features.push({
-          type: "Feature",
-          properties: { opacity: 0.15 + (0.65 * i) / positions.length },
-          geometry: {
-            type: "LineString",
-            coordinates: [
-              nodes.get(positions[i - 1].city_id)!,
-              nodes.get(positions[i].city_id)!,
-            ],
-          },
-        });
-      }
+    const positions =
+      agent?.trajectory.slice(Math.max(0, tick - 12), tick + 1) ?? [];
+    for (let i = 1; i < positions.length; i++) {
+      const from = positions[i - 1].coordinates;
+      const to = positions[i].coordinates;
+      if (from[0] === to[0] && from[1] === to[1]) continue;
+      trail.features.push({
+        type: "Feature",
+        properties: { opacity: 0.15 + (0.65 * i) / positions.length },
+        geometry: { type: "LineString", coordinates: [from, to] },
+      });
     }
     (instance.getSource("trail") as GeoJSONSource).setData(trail);
-    return () => cancelAnimationFrame(animation.current);
-  }, [tick, result, ready, selectedAgent, graph]);
+  }, [tick, result, ready, selectedAgent]);
+
+  useEffect(() => {
+    if (!ready || !focusPoint) return;
+    setFocusedCity("");
+    map.current?.easeTo({
+      center: focusPoint,
+      zoom: 17,
+      duration: reduced.current ? 0 : 300,
+    });
+  }, [focusPoint, ready]);
   function focusCity(id: string) {
     setFocusedCity(id);
     const city = graph.nodes.find((node) => node.id === id);
@@ -507,7 +479,7 @@ export default function CityMap({ graph, result }: Props) {
         {result && (
           <span>
             <i className="legend-agent" />
-            个体位置
+            当天位置
           </span>
         )}
       </div>

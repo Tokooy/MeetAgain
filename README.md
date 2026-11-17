@@ -1,6 +1,6 @@
 # MeetAgain · 再相逢
 
-**各自生活，还会再相逢吗？** 在南京、镇江、扬州之间模拟独立出行，观察同行者何时同城相遇。地图显示三座城市的实际道路和行政边界。
+**各自生活，还会再相逢吗？** 在南京、镇江、扬州之间模拟独立出行，观察同行者何时在同一条街相距 50 米以内。地图显示三座城市的实际道路和行政边界。
 
 Rust 模拟引擎与 React 可视化界面分目录开发，最终交付 **一个 Docker 镜像、一个后端进程、一个 HTTP 端口**。后端提供 JSON API，并通过 `tower-http::ServeDir` 托管静态前端。无数据库、地图密钥或运行时外部瓦片依赖。
 
@@ -57,7 +57,7 @@ scripts/import-osm-map.py  从 OSM PBF 导入城市数据
 docs/               API Schema、截图、交付证据
 ```
 
-前端使用 React 19、TypeScript strict、Vite、Tailwind CSS v4、MapLibre GL JS v6、Recharts v3、Zustand 和 TanStack Query。深浅主题可切换；窄屏控制与结果默认折叠；位置过渡 200ms，遵循 `prefers-reduced-motion`。地图 worker 由 Vite 独立打包，不从 CDN 加载。
+前端使用 React 19、TypeScript strict、Vite、Tailwind CSS v4、MapLibre GL JS v6、Recharts v3、Zustand 和 TanStack Query。深浅主题可切换；窄屏控制与结果默认折叠；回放显示每日采样点；地图缩放遵循 `prefers-reduced-motion`。地图 worker 由 Vite 独立打包，不从 CDN 加载。
 
 ## 道路数据在哪里
 
@@ -106,19 +106,18 @@ curl -fsS --compressed http://127.0.0.1:8080/api/map/roads/320100 -o nanjing-str
 
 ## 行为模型
 
-1. 每个 agent 独立、均匀地随机选择一个初始城市，同时把它作为 home。
-2. 每天，在 home 时以 `0.10` 概率出行，在外时以 `0.25` 概率出行，否则停留。
-3. 决定出行且不在 home 时，以 `0.60` 概率沿加权最短路径向 home 移动到相邻城市；否则在邻居中按 `1 / distance_km` 加权选择。
-4. 全部 agent 同步更新；不共享位置、不追逐、不协调目的地。每个模拟日最多沿一条边移动。
-5. 同一天、同城市的每一对 agent 产生一个事件。三人同城产生三对；同一对连续同城，每天各记一次。
+1. 网页默认两人。「家乡与毕业去向」可分别为每个人选家乡和毕业后的城市。第 0 天在家乡，未指定家乡时随机抽取。设置了毕业去向的人在第 1 天到达该城市；未设置的人从第 1 天起按日常规则行动。
+2. 按日常规则，在家乡以 `0.10` 概率换城市，在外地以 `0.25` 概率换城市，否则留在当前城市。外地决定出发后，平日以 `0.60` 概率沿最短路线往家乡走一站，其余按逆距离权重选择相邻城市。
+3. 每人每天在所在城市的 OSM 道路上采样一次位置，按道路长度加权。模拟回放显示采样点，两点间的虚线是示意。
+4. 两人在同一天的采样点属于同一条街，且球面直线距离不超过 **50 米**，才记录一次相遇。所有人同时相聚要求每一对都满足当天的相遇条件。
 
-每个 tick 对应一个模拟日，tick 0 表示初始位置，默认不计入相遇。只匹配同一天的位置，途中交叉不计为相遇。模拟日用于安排出行决策，距离不影响旅程所用的模拟天数。
+同一 OSM way 的分段视为同一条街。同名的道路分段在共享顶点时合并；没有名称时使用 OSM 道路编号。同名但不相连的路段各自独立。第 0 天默认不计入相遇，可在行为参数中开启。模拟只比较每天采样的位置，路过或在两次采样之间擦肩均不计数。
 
-勾选「所有人从同一座家乡城市出发」后，随机抽取一座城市作为所有人的家乡和初始位置。每个人仍独立出行，同城仍按现有规则记录相遇。
+勾选「所有人从同一座家乡城市出发」后，可选共同家乡，或让系统随机抽取。每个人仍可单独设置毕业去向。
 
 网页用「分开日期」作为旅程编号，默认为 2026-11-16，可选 1901–2099 年内的模拟区间。正月初一由农历换算得到。节前 21 天逐日提高外地出发后沿最短路线返乡的概率，初一到初七保持最高值（例如平日 60% 升至 90%），节后 7 天内逐日降回平日值。CLI 可用 `--start-date YYYY-MM-DD` 设置分开日期，用 `--same-hometown` 选择共同家乡。
 
-默认模拟在南京、镇江、扬州之间使用三条加权无向连接。地图上的实线来自 OSM 道路，虚线表示模拟中的城市连接。模拟移动和相遇以城市为单位；距离权重近似为城市中心之间的球面距离。
+默认模拟在南京、镇江、扬州之间使用三条加权无向连接。地图上的实线来自 OSM 道路，虚线表示模拟中的城市连接。换城概率仍按城市连接计算，距离权重为城市中心间球面距离。毕业迁移可直达选定城市，统计距离用最短城市路径，沿途不记录相遇。
 
 ## 离线 CLI 与可复现性
 
@@ -132,13 +131,13 @@ docker run --rm --network none meetagain:latest \
   simulate --agents 20 --ticks 365 --seed 20261116 > result.json
 ```
 
-CLI 可用 `--home-move`、`--away-move`、`--home-return` 调整概率，`--include-tick-zero` 计入初始同城。
+CLI 可用 `--home-move`、`--away-move`、`--home-return` 调整概率，`--include-tick-zero` 计入第 0 天的相遇。可用 `--participants people.json` 读取每个人的家乡与毕业去向，文件内容与 [API 请求的 participants 数组](docs/API.md#explicit-request) 相同。
 
 ChaCha8、固定 seed、稳定的城市/邻居遍历顺序与锁定依赖实现同代码、同地图版本和同配置复现。seed 为十进制 u64 字符串，避免 JavaScript 整数精度损失。Agent ID 从 0 开始，界面显示编号从 01 开始。
 
-输出包含每人的完整 tick 轨迹、家与起终城市、移动次数、访问城市和近似距离，以及全部 `(tick, city_id, agent_ids)` 事件。事件按 tick、城市 ID、agent ID 排序。汇总分别报告至少一对相遇、去重相遇人数对、首次 tick，以及全员同时相聚。API 的运行 ID 为独立随机标识，不属于可复现模拟输出。
+输出包含每人的家乡、毕业去向、每日街道及坐标、换城次数、访问城市和近似市际距离，以及每次相遇的街道和两人距离。事件按 tick、城市 ID、agent ID 排序。汇总分别报告至少一对相遇、去重相遇人数对、首次 tick，以及全员同时相聚。API 的运行 ID 为独立随机标识，不属于可复现模拟输出。
 
-有限模拟可以证明某次相遇发生过，不能从零事件推出永不相遇。默认正概率、可停留、独立移动的有限连通 Markov 模型在无限时域以概率 1 到达相聚状态；这不等于现实承诺，也不适用于把某些移动概率设为零后失去遍历性的配置。
+在一段有限的模拟旅程里没有采样到相遇很常见。结果取决于观察时长、行为参数和道路采样。
 
 ## API
 
@@ -153,10 +152,10 @@ ChaCha8、固定 seed、稳定的城市/邻居遍历顺序与锁定依赖实现�
 ```sh
 curl -fsS -X POST http://127.0.0.1:8080/api/simulations \
   -H 'Content-Type: application/json' \
-  -d '{"agents":20,"ticks":365,"seed":"20261116","movement":{"home_move_probability":0.1,"away_move_probability":0.25,"home_return_probability":0.6},"encounters":{"include_tick_zero":false,"cross_tick_tolerance":0}}'
+  -d '{"agents":2,"ticks":365,"start_date":"2026-11-16","participants":[{"home_city_id":"320100","graduation_city_id":"321100"},{"home_city_id":"321000","graduation_city_id":"320100"}],"movement":{"home_move_probability":0.1,"away_move_probability":0.25,"home_return_probability":0.6},"encounters":{"include_tick_zero":false,"cross_tick_tolerance":0}}'
 ```
 
-拒绝未知字段；`same_hometown` 可省略。`start_date` 和旧版 `seed` 至少提供一项。N 为 2–100，ticks 为 1–5300（模拟天数），且最坏成对检查数
+拒绝未知字段；`same_hometown` 和 `participants` 可省略。非空 `participants` 的条目数必须等于人数。`start_date` 和旧版 `seed` 至少提供一项。N 为 2–100，ticks 为 1–5300（模拟天数），且最坏成对检查数
 `N * (N - 1) / 2 * (ticks + include_tick_zero)` 不超过 500,000。观察 5,300 天时，最多可选择 14 人。界面中的「分开日期」对应 API 的 `start_date`。相同的日期和设置可以重现家乡、每日轨迹及相遇结果。超限返回错误，不截断结果。
 
 单次模拟请求体最多 16 KiB；一次只执行一个模拟任务，并发请求返回 JSON 429。结果缓存在内存中，15 分钟过期，最多保留 4 次，先进先出淘汰；重启丢失。前端提供轨迹和完整结果下载，并提示缓存过期。完整形状及错误码见 [API 契约](docs/API.md) 和 [JSON Schema](docs/api.schema.json)。

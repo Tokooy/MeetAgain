@@ -9,7 +9,7 @@ import {
   Clock3,
   ChevronDown,
 } from "lucide-react";
-import type { Encounter, Graph, Simulation } from "../types";
+import type { Encounter, Graph, Position, Simulation } from "../types";
 import { useView } from "../store";
 import { downloadJson } from "../api";
 interface Props {
@@ -20,6 +20,9 @@ interface Props {
   error?: Error | null;
   onRetry: () => void;
 }
+const streetLabel = (location: Pick<Position, "street_id" | "street_name">) =>
+  location.street_name ?? `道路 #${location.street_id}`;
+
 export function Results({
   result,
   graph,
@@ -28,7 +31,8 @@ export function Results({
   error,
   onRetry,
 }: Props) {
-  const { selectedAgent, selectAgent, setTick, setPlaying } = useView();
+  const { selectedAgent, selectAgent, setTick, setPlaying, focusMap } =
+    useView();
   const [shown, setShown] = useState(30);
   useEffect(() => setShown(30), [result?.id]);
   const cityName = (id: string) =>
@@ -58,6 +62,8 @@ export function Results({
     setPlaying(false);
     setTick(event.tick);
     selectAgent(event.agent_ids[0]);
+    const sample = result?.agents[event.agent_ids[0]]?.trajectory[event.tick];
+    if (sample) focusMap(sample.coordinates);
   }
   return (
     <aside className="results panel" aria-label="模拟结果">
@@ -99,7 +105,7 @@ export function Results({
             <p className="result-conclusion" role="status">
               {result.summary.any_encounter
                 ? "各自忙碌，依然有过交集。"
-                : "这段旅程里，尚未再次相逢。"}
+                : "这段旅程里，没有人在同一条街相距 50 米以内。"}
             </p>
             <div className="stat-grid">
               <div className="stat-card featured">
@@ -122,7 +128,7 @@ export function Results({
                     {result.summary.first_encounter_tick === null ? "" : "天"}
                   </small>
                 </strong>
-                <p>同一时刻，同一座城</p>
+                <p>同一天、同街、50 米以内</p>
               </div>
             </div>
             <div className="reunion-note">
@@ -236,11 +242,14 @@ export function Results({
                   个体 {String(agent.id + 1).padStart(2, "0")} 的旅程
                 </strong>
                 <p>
-                  家在{cityName(agent.home_city_id)} · 最终停留
+                  家乡：{cityName(agent.home_city_id)}
+                  {agent.graduation_city_id &&
+                    ` · 毕业后到${cityName(agent.graduation_city_id)}`}
+                  {" · 最终停留"}
                   {cityName(agent.final_city_id)}
                 </p>
                 <div>
-                  <span>{agent.move_count} 次移动</span>
+                  <span>{agent.move_count} 次换城</span>
                   <span>{agent.visited_city_ids.length} 座城市</span>
                   <span>约 {Math.round(agent.distance_km)} km</span>
                 </div>
@@ -256,9 +265,13 @@ export function Results({
                           onClick={() => {
                             setTick(p.tick);
                             setPlaying(false);
+                            focusMap(p.coordinates);
                           }}
                         >
-                          第 {p.tick} 天<span>{cityName(p.city_id)}</span>
+                          第 {p.tick} 天
+                          <span>
+                            {cityName(p.city_id)} · {streetLabel(p)}
+                          </span>
                         </button>
                       </li>
                     ))}
@@ -287,7 +300,14 @@ export function Results({
                           <small>DAY</small>
                         </span>
                         <span className="event-body">
-                          <b>{cityName(e.city_id)}</b>
+                          <b>{streetLabel(e)}</b>
+                          <span>
+                            {cityName(e.city_id)} · 相距{" "}
+                            {e.distance_m.toLocaleString("zh-CN", {
+                              maximumFractionDigits: 1,
+                            })}{" "}
+                            米
+                          </span>
                           <span>
                             个体 {String(e.agent_ids[0] + 1).padStart(2, "0")}{" "}
                             <i>与</i>{" "}
@@ -318,7 +338,7 @@ export function Results({
                 className="text-button"
                 onClick={() =>
                   downloadJson(
-                    `meetagain-${result.config.seed}-trajectories.json`,
+                    `meetagain-${result.config.start_date ?? result.config.seed}-trajectories.json`,
                     result,
                   )
                 }
@@ -331,7 +351,7 @@ export function Results({
                 disabled={loading || !!error}
                 onClick={() =>
                   downloadJson(
-                    `meetagain-${result.config.seed}-complete.json`,
+                    `meetagain-${result.config.start_date ?? result.config.seed}-complete.json`,
                     { ...result, encounters: events },
                   )
                 }

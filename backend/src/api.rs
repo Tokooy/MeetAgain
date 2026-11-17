@@ -234,7 +234,7 @@ async fn create_simulation(
     })
     .await
     .map_err(|_| ApiError::internal())?
-    .map_err(|_| ApiError::internal())?;
+    .map_err(|e| ApiError::invalid(e.message, Some(e.field)))?;
     let id = Uuid::new_v4().to_string();
     let result = Arc::new(result);
     {

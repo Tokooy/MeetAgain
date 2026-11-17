@@ -373,6 +373,58 @@ select {
   line-height: 1.7;
   margin-top: 8px;
 }
+.participant-setup {
+  margin-top: 20px;
+}
+.participant-setup h3 {
+  font-size: 12px;
+  font-weight: 600;
+}
+.participant-setup .checkbox-field {
+  margin-top: 10px;
+}
+.participant-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 10px;
+  min-width: 0;
+  padding: 0 8px 8px;
+}
+.participant-card legend {
+  color: var(--muted);
+  font-size: 10px;
+  padding: 0 4px;
+}
+.participant-fields {
+  display: flex;
+  gap: 8px;
+}
+.participant-fields label,
+.shared-city-select {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
+}
+.shared-city-select {
+  margin-top: 8px;
+}
+.participant-fields select,
+.shared-city-select select {
+  font-size: 11px;
+  min-height: 34px;
+  padding: 4px;
+}
+.more-participants {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.more-participants summary {
+  cursor: pointer;
+}
 .advanced-toggle {
   width: 100%;
   display: flex;
@@ -1242,7 +1294,7 @@ input[type="checkbox"] {
   .controls .primary-button,
   .controls .reset-button,
   .controls .field-hint,
-  .controls .shared-hometown {
+  .controls .participant-setup {
     grid-column: 1 / -1;
   }
   .controls .description {
@@ -1251,7 +1303,7 @@ input[type="checkbox"] {
   .controls .field {
     margin-top: 16px;
   }
-  .controls .field:nth-of-type(3) {
+  .controls .field:has(.departure-date) {
     grid-column: 1 / -1;
   }
   .model-note {

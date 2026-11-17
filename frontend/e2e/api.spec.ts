@@ -38,6 +38,10 @@ test("real HTTP responses conform to the confirmed JSON schemas", async ({
     agents: 2,
     ticks: 5300,
     seed: "20261116",
+    participants: [
+      { home_city_id: "320100", graduation_city_id: "321100" },
+      { home_city_id: "321000", graduation_city_id: "320100" },
+    ],
     movement: {
       home_move_probability: 0.1,
       away_move_probability: 0.25,
@@ -50,6 +54,8 @@ test("real HTTP responses conform to the confirmed JSON schemas", async ({
   expect(created.status()).toBe(201);
   const result = await created.json();
   conforms("SimulationResponse", result);
+  expect(result.agents[0].trajectory[1].city_id).toBe("321100");
+  expect(result.agents[1].trajectory[1].city_id).toBe("320100");
   expect(result.agents[0].trajectory.at(-1).tick).toBe(5300);
   let cursor: string | null = null;
   let count = 0;
@@ -88,6 +94,13 @@ test("real HTTP responses conform to the confirmed JSON schemas", async ({
   });
   expect(invalidDate.status()).toBe(422);
   expect((await invalidDate.json()).error.field).toBe("start_date");
+  const invalidHome = await request.post("/api/simulations", {
+    data: { ...config, participants: [{ home_city_id: "320400" }, {}] },
+  });
+  expect(invalidHome.status()).toBe(422);
+  expect((await invalidHome.json()).error.field).toBe(
+    "participants.home_city_id",
+  );
   const malformed = await request.post("/api/simulations", {
     data: Buffer.from("{"),
     headers: { "content-type": "application/json" },

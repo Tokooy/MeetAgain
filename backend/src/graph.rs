@@ -1,4 +1,5 @@
-//! The simulation uses city links for movement and serves OSM streets as a separate map layer.
+//! City links and OSM street geometry shared by the map and simulation.
+use crate::streets::{StreetCatalog, StreetLine, StreetPoint};
 use axum::body::Bytes;
 use flate2::read::GzDecoder;
 use geo::{Distance, Haversine, Point};
@@ -7,6 +8,7 @@ use petgraph::{
     algo::{astar, connected_components},
     graph::{NodeIndex, UnGraph},
 };
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -14,7 +16,7 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{Arc, OnceLock},
 };
 use thiserror::Error;
 
@@ -52,6 +54,7 @@ pub struct RoadGraph {
     pub boundary_sha256: String,
     pub version: String,
     streets: BTreeMap<String, Bytes>,
+    street_catalog: Arc<StreetCatalog>,
     graph: UnGraph<(), f64>,
 }
 
@@ -176,7 +179,7 @@ fn load_boundary(path: &Path, id: &str) -> Result<(Feature, BoundaryProperties),
     Ok((feature, properties))
 }
 
-fn load_streets(path: &Path) -> Result<(Bytes, usize), GraphError> {
+fn load_streets(path: &Path) -> Result<(Bytes, Vec<StreetLine>), GraphError> {
     let file = fs::File::open(path).map_err(|error| local_error(path, error))?;
     let mut data = Vec::new();
     GzDecoder::new(file)
@@ -197,7 +200,8 @@ fn load_streets(path: &Path) -> Result<(Bytes, usize), GraphError> {
     if collection.features.is_empty() {
         return Err(local_error(path, "expected at least one street"));
     }
-    for feature in &collection.features {
+    let mut lines = Vec::with_capacity(collection.features.len());
+    for feature in collection.features {
         let Some(Value::LineString(line)) = feature.geometry.as_ref().map(|g| &g.value) else {
             return Err(local_error(path, "a street is missing its LineString"));
         };
@@ -219,8 +223,22 @@ fn load_streets(path: &Path) -> Result<(Bytes, usize), GraphError> {
                 "a street has invalid class, highway or OSM way ID",
             ));
         }
+        let text = |key| {
+            feature
+                .property(key)
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        };
+        lines.push(StreetLine {
+            way_id: id.expect("validated OSM way ID"),
+            name: text("name"),
+            reference: text("ref"),
+            coordinates: line.iter().map(|point| [point[0], point[1]]).collect(),
+        });
     }
-    Ok((Bytes::from(data), collection.features.len()))
+    Ok((Bytes::from(data), lines))
 }
 
 fn bundled_map_dir() -> PathBuf {
@@ -261,6 +279,7 @@ impl RoadGraph {
         let mut cities = Vec::new();
         let mut boundaries = FeatureCollection::default();
         let mut streets = BTreeMap::new();
+        let mut street_lines = Vec::new();
         let mut relations = BTreeSet::new();
         for id in ids {
             let city_folder = directory.join("cities").join(&id);
@@ -271,8 +290,9 @@ impl RoadGraph {
                     properties.osm_relation
                 )));
             }
-            let (street_json, street_segments) =
-                load_streets(&city_folder.join("streets.geojson.gz"))?;
+            let (street_json, lines) = load_streets(&city_folder.join("streets.geojson.gz"))?;
+            let street_segments = lines.len();
+            street_lines.push(lines);
             streets.insert(id.clone(), street_json);
             boundaries.features.push(boundary);
             cities.push(City {
@@ -345,12 +365,17 @@ impl RoadGraph {
             boundary_sha256,
             version: format!("osm-map-v1-{:x}", hash.finalize()),
             streets,
+            street_catalog: Arc::new(StreetCatalog::new(street_lines)),
             graph,
         })
     }
 
     pub fn streets(&self, city_id: &str) -> Option<Bytes> {
         self.streets.get(city_id).cloned()
+    }
+
+    pub(crate) fn sample_street(&self, city: usize, rng: &mut impl Rng) -> StreetPoint {
+        self.street_catalog.sample(city, rng)
     }
 
     pub fn neighbors(&self, city: usize) -> Vec<(usize, f64)> {
@@ -365,6 +390,17 @@ impl RoadGraph {
     }
 
     pub fn step_home(&self, city: usize, home: usize) -> Option<usize> {
+        self.shortest_path(city, home)
+            .and_then(|(_, path)| path.get(1).map(|n| n.index()))
+    }
+
+    pub(crate) fn relocation_distance(&self, city: usize, destination: usize) -> f64 {
+        self.shortest_path(city, destination)
+            .expect("validated connected city graph")
+            .0
+    }
+
+    fn shortest_path(&self, city: usize, home: usize) -> Option<(f64, Vec<NodeIndex>)> {
         astar(
             &self.graph,
             NodeIndex::new(city),
@@ -372,6 +408,5 @@ impl RoadGraph {
             |e| *e.weight(),
             |_| 0.0,
         )
-        .and_then(|(_, path)| path.get(1).map(|n| n.index()))
     }
 }

@@ -1,8 +1,12 @@
+mod support;
+
+use geo::{Distance, Haversine, Point};
 use meetagain::{
     graph::RoadGraph,
-    simulation::{EncounterRules, Movement, SimulationConfig, simulate},
+    simulation::{EncounterRules, Movement, ParticipantCities, SimulationConfig, simulate},
 };
 use std::collections::BTreeSet;
+use support::MapFixture;
 
 fn config() -> SimulationConfig {
     SimulationConfig {
@@ -11,6 +15,7 @@ fn config() -> SimulationConfig {
         seed: "20261116".into(),
         same_hometown: false,
         start_date: None,
+        participants: Vec::new(),
         movement: Movement::default(),
         encounters: EncounterRules::default(),
     }
@@ -29,7 +34,7 @@ fn identical_seed_and_config_reproduce_every_output_field() {
 
 #[test]
 fn every_trajectory_and_encounter_agrees_with_independent_reconstruction() {
-    let g = RoadGraph::bundled().unwrap();
+    let g = MapFixture::short_streets().graph();
     let c = config();
     let r = simulate(&g, &c).unwrap();
     for a in &r.agents {
@@ -72,26 +77,34 @@ fn every_trajectory_and_encounter_agrees_with_independent_reconstruction() {
     let mut expected = Vec::new();
     let mut pairs = BTreeSet::new();
     let mut first_all = None;
+    let pair_limit = r.agents.len() * (r.agents.len() - 1) / 2;
     for tick in 1..=c.ticks as usize {
-        for city in &g.cities {
-            for a in 0..r.agents.len() {
-                for b in a + 1..r.agents.len() {
-                    if r.agents[a].trajectory[tick].city_id == city.id
-                        && r.agents[b].trajectory[tick].city_id == city.id
-                    {
-                        expected.push((tick as u32, city.id.clone(), [a as u32, b as u32]));
-                        pairs.insert([a as u32, b as u32]);
-                    }
+        let mut daily = Vec::new();
+        for a in 0..r.agents.len() {
+            for b in a + 1..r.agents.len() {
+                let first = &r.agents[a].trajectory[tick];
+                let second = &r.agents[b].trajectory[tick];
+                let separation = Haversine.distance(
+                    Point::from(first.street.coordinates),
+                    Point::from(second.street.coordinates),
+                );
+                if first.street.street_id == second.street.street_id && separation <= 50.0 {
+                    daily.push((
+                        tick as u32,
+                        first.city_id.clone(),
+                        [a as u32, b as u32],
+                        first.street.street_id,
+                        separation,
+                    ));
+                    pairs.insert([a as u32, b as u32]);
                 }
             }
         }
-        if first_all.is_none()
-            && r.agents
-                .iter()
-                .all(|a| a.trajectory[tick].city_id == r.agents[0].trajectory[tick].city_id)
-        {
+        if first_all.is_none() && daily.len() == pair_limit {
             first_all = Some(tick as u32);
         }
+        daily.sort_by(|a, b| (&a.1, a.2).cmp(&(&b.1, b.2)));
+        expected.extend(daily);
     }
     assert!(
         !expected.is_empty(),
@@ -100,7 +113,13 @@ fn every_trajectory_and_encounter_agrees_with_independent_reconstruction() {
     assert_eq!(
         r.encounters
             .iter()
-            .map(|e| (e.tick, e.city_id.clone(), e.agent_ids))
+            .map(|e| (
+                e.tick,
+                e.city_id.clone(),
+                e.agent_ids,
+                e.street_id,
+                e.distance_m
+            ))
             .collect::<Vec<_>>(),
         expected
     );
@@ -116,28 +135,81 @@ fn every_trajectory_and_encounter_agrees_with_independent_reconstruction() {
 }
 
 #[test]
-fn zero_movement_stays_home_and_tick_zero_is_explicit() {
-    let g = RoadGraph::bundled().unwrap();
+fn zero_city_movement_stays_home_and_tick_zero_is_explicit() {
+    let g = MapFixture::short_streets().graph();
     let mut c = config();
+    c.agents = 2;
     c.ticks = 5;
+    c.same_hometown = true;
     c.movement.home_move_probability = 0.0;
     let r = simulate(&g, &c).unwrap();
     assert!(
-        r.agents
-            .iter()
-            .all(|a| a.move_count == 0 && a.distance_km == 0.0 && a.visited_city_ids.len() == 1)
+        r.agents.iter().all(|a| {
+            a.move_count == 0 && a.distance_km == 0.0 && a.visited_city_ids.len() == 1
+        })
     );
-    // 20 people in three cities guarantees a pair even without movement.
     assert_eq!(r.summary.first_encounter_tick, Some(1));
-    let per_tick = r.encounters.iter().filter(|e| e.tick == 1).count();
-    assert_eq!(r.encounters.len(), per_tick * 5);
+    assert_eq!(r.summary.first_all_agents_tick, Some(1));
+    assert_eq!(r.encounters.len(), 5);
     c.encounters.include_tick_zero = true;
     let with_initial = simulate(&g, &c).unwrap();
     assert_eq!(with_initial.summary.first_encounter_tick, Some(0));
-    assert_eq!(with_initial.encounters.len(), per_tick * 6);
+    assert_eq!(with_initial.summary.first_all_agents_tick, Some(0));
+    assert_eq!(&with_initial.encounters[1..], r.encounters.as_slice());
+    assert_eq!(r.agents, with_initial.agents);
+}
+
+#[test]
+fn chosen_hometowns_and_graduation_cities_apply_on_days_zero_and_one() {
+    let graph = MapFixture::short_streets().graph();
+    let mut c = config();
+    c.agents = 2;
+    c.ticks = 2;
+    c.participants = vec![
+        ParticipantCities {
+            home_city_id: Some("alpha".into()),
+            graduation_city_id: Some("gamma".into()),
+        },
+        ParticipantCities {
+            home_city_id: Some("gamma".into()),
+            graduation_city_id: Some("beta".into()),
+        },
+    ];
+    c.movement.home_move_probability = 0.0;
+    c.movement.away_move_probability = 0.0;
+    let result = simulate(&graph, &c).unwrap();
+    let cities = |agent: usize| {
+        result.agents[agent]
+            .trajectory
+            .iter()
+            .map(|p| p.city_id.as_str())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(cities(0), ["alpha", "gamma", "gamma"]);
+    assert_eq!(cities(1), ["gamma", "beta", "beta"]);
+    assert_eq!(result.agents[0].home_city_id, "alpha");
     assert_eq!(
-        r.summary.unique_encounter_pairs,
-        with_initial.summary.unique_encounter_pairs
+        result.agents[0].graduation_city_id.as_deref(),
+        Some("gamma")
+    );
+    assert_eq!(result.agents[0].move_count, 1);
+    assert_eq!(result.agents[0].visited_city_ids, ["alpha", "gamma"]);
+    let planned_km = graph.neighbors(0)[0].1 + graph.neighbors(2)[0].1;
+    assert!((result.agents[0].distance_km - planned_km).abs() < 1e-9);
+    assert!(result.encounters.is_empty());
+
+    c.same_hometown = true;
+    assert_eq!(
+        simulate(&graph, &c).unwrap_err().field,
+        "participants.home_city_id"
+    );
+    c.participants[1].home_city_id = None;
+    let shared = simulate(&graph, &c).unwrap();
+    assert!(shared.agents.iter().all(|a| a.home_city_id == "alpha"));
+    c.participants[1].graduation_city_id = Some("missing".into());
+    assert_eq!(
+        simulate(&graph, &c).unwrap_err().field,
+        "participants.graduation_city_id"
     );
 }
 
@@ -172,6 +244,9 @@ fn invalid_parameters_fail_before_simulation() {
     }
     let mut c = config();
     c.encounters.cross_tick_tolerance = 1;
+    cases.push(c);
+    let mut c = config();
+    c.participants = vec![ParticipantCities::default()];
     cases.push(c);
     let mut c = config();
     c.agents = 100;

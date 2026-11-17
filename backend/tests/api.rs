@@ -1,3 +1,5 @@
+mod support;
+
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -10,6 +12,7 @@ use meetagain::{
 };
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
+use support::MapFixture;
 use tower::ServiceExt;
 
 fn app() -> Router {
@@ -98,10 +101,22 @@ async fn street_api_serves_geojson_for_active_cities_only() {
 
 #[tokio::test]
 async fn api_matches_engine_and_pagination_has_no_missing_or_duplicate_events() {
-    let app = app();
-    let input = config();
+    let graph = MapFixture::short_streets().graph();
+    let app = router(
+        Arc::new(ApiState::new(graph.clone())),
+        "/tmp/meetagain-no-assets",
+    );
+    let mut input = config();
+    input["agents"] = json!(4);
+    input["ticks"] = json!(5);
+    input["participants"] = json!([
+        {"home_city_id":"alpha", "graduation_city_id":"beta"},
+        {"home_city_id":"gamma", "graduation_city_id":"beta"},
+        {"home_city_id":"beta", "graduation_city_id":"beta"},
+        {"home_city_id":"beta", "graduation_city_id":"beta"}
+    ]);
     let engine = simulate(
-        &RoadGraph::bundled().unwrap(),
+        &graph,
         &serde_json::from_value::<SimulationConfig>(input.clone()).unwrap(),
     )
     .unwrap();
@@ -117,6 +132,14 @@ async fn api_matches_engine_and_pagination_has_no_missing_or_duplicate_events() 
         serde_json::to_value(&engine.agents).unwrap()
     );
     assert!(result.get("encounters").is_none());
+    assert!(engine.encounters.len() > 7, "exercise more than one page");
+    assert_eq!(result["agents"][0]["home_city_id"], "alpha");
+    assert_eq!(result["agents"][0]["trajectory"][1]["city_id"], "beta");
+    let mut unknown_city = input.clone();
+    unknown_city["participants"][1]["graduation_city_id"] = "outside".into();
+    let (status, error) = send(app.clone(), "POST", "/api/simulations", Some(unknown_city)).await;
+    assert_eq!(status, 422);
+    assert_eq!(error["error"]["field"], "participants.graduation_city_id");
     let id = result["id"].as_str().unwrap();
     let mut path = format!("/api/simulations/{id}/encounters?limit=7");
     let mut events = Vec::new();

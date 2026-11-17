@@ -1,17 +1,18 @@
 import { PanelSection } from "./PanelSection";
 import { useState, type FormEvent } from "react";
 import { ArrowUpRight, RotateCcw, SlidersHorizontal, Info } from "lucide-react";
-import type { Config } from "../types";
+import type { City, Config, ParticipantCities } from "../types";
+import { ParticipantSetup } from "./ParticipantSetup";
 interface Props {
   busy: boolean;
-  ready: boolean;
+  cities: City[];
   onStart: (config: Config) => void;
   onReset: () => void;
 }
 const MAX_DAYS = 5300;
 const MAX_PAIR_CHECKS = 500_000;
 const defaults = {
-  agents: "20",
+  agents: "2",
   ticks: "365",
   sameHometown: false,
   startDate: "2026-11-16",
@@ -19,11 +20,16 @@ const defaults = {
   away: 0.25,
   back: 0.6,
 };
-export function Controls({ busy, ready, onStart, onReset }: Props) {
+export function Controls({ busy, cities, onStart, onReset }: Props) {
   const [values, setValues] = useState(defaults);
   const [initial, setInitial] = useState(false);
   const [advanced, setAdvanced] = useState(false);
+  const [choices, setChoices] = useState<ParticipantCities[]>([]);
+  const [sharedCity, setSharedCity] = useState("");
   const agents = Number(values.agents);
+  const validAgentCount =
+    Number.isInteger(agents) && agents >= 2 && agents <= 100;
+  const ready = cities.length > 0;
   const pairsPerDay = (agents * (agents - 1)) / 2;
   const budget = pairsPerDay * (Number(values.ticks) + Number(initial));
   const maxDaysForAgents =
@@ -32,11 +38,40 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
   const calendarValid =
     start >= Date.parse("1901-01-01") &&
     start + Number(values.ticks) * 86_400_000 <= Date.parse("2099-12-31");
+  function chooseCity(
+    index: number,
+    field: keyof ParticipantCities,
+    city: string,
+  ) {
+    setChoices((previous) => {
+      const next = [...previous];
+      next[index] = { ...next[index], [field]: city || undefined };
+      return next;
+    });
+  }
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (budget > MAX_PAIR_CHECKS || !calendarValid || busy || !ready) return;
+    if (
+      budget > MAX_PAIR_CHECKS ||
+      !calendarValid ||
+      !validAgentCount ||
+      busy ||
+      !ready
+    )
+      return;
+    const participants = Array.from({ length: agents }, (_, index) => ({
+      ...choices[index],
+      ...(values.sameHometown ? { home_city_id: sharedCity || undefined } : {}),
+    }));
     onStart({
-      agents: Number(values.agents),
+      agents,
+      ...(participants.some(
+        ({ home_city_id, graduation_city_id }) =>
+          home_city_id || graduation_city_id,
+      )
+        ? { participants }
+        : {}),
       ticks: Number(values.ticks),
       same_hometown: values.sameHometown,
       start_date: values.startDate,
@@ -56,11 +91,6 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
             <span className="section-index">01</span>
             <h2>设定这段旅程</h2>
           </div>
-          <p className="muted description">
-            不约定目的地，也不追随彼此。
-            <br />
-            只是偶尔出发，时常想家。
-          </p>
           <label className="field">
             <span>
               同行人数 <small>INDIVIDUALS</small>
@@ -80,20 +110,18 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
               <span>人</span>
             </div>
           </label>
-          <label className="checkbox-field shared-hometown">
-            <input
-              type="checkbox"
-              checked={values.sameHometown}
-              onChange={(e) =>
-                setValues({ ...values, sameHometown: e.target.checked })
-              }
-              aria-describedby="shared-hometown-hint"
-            />
-            所有人从同一座家乡城市出发
-          </label>
-          <p className="field-hint shared-hometown" id="shared-hometown-hint">
-            勾选后，系统随机选一座城市作为大家的家乡，每个人仍独立决定去哪儿。
-          </p>
+          <ParticipantSetup
+            cities={cities}
+            count={validAgentCount ? agents : 2}
+            choices={choices}
+            shared={values.sameHometown}
+            sharedCity={sharedCity}
+            onSharedChange={(sameHometown) =>
+              setValues({ ...values, sameHometown })
+            }
+            onSharedCityChange={setSharedCity}
+            onChoiceChange={chooseCity}
+          />
           <label className="field">
             <span>
               观察时长 <small>DAYS</small>
@@ -153,7 +181,7 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
                   {
                     key: "away",
                     label: "在外地时，今天换城市的概率",
-                    hint: "25% 表示今天有 25% 的机会去另一座城市，其余时候留在原地。",
+                    hint: "25% 表示今天有 25% 的机会去另一座城市，其余时候留在同一座城市。",
                   },
                   {
                     key: "back",
@@ -195,7 +223,7 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
                   checked={initial}
                   onChange={(e) => setInitial(e.target.checked)}
                 />
-                计入初始时刻的同城相遇
+                计入第 0 天的相遇
               </label>
             </div>
           )}
@@ -214,7 +242,11 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
             className="primary-button"
             type="submit"
             disabled={
-              busy || !ready || budget > MAX_PAIR_CHECKS || !calendarValid
+              busy ||
+              !ready ||
+              !validAgentCount ||
+              budget > MAX_PAIR_CHECKS ||
+              !calendarValid
             }
           >
             {busy ? "正在推演…" : "开始模拟"}
@@ -226,6 +258,8 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
             disabled={busy}
             onClick={() => {
               setValues(defaults);
+              setChoices([]);
+              setSharedCity("");
               setInitial(false);
               onReset();
             }}
@@ -239,7 +273,8 @@ export function Controls({ busy, ready, onStart, onReset }: Props) {
           <div>
             <strong>怎样算一次相遇？</strong>
             <p>
-              同一天在同一座城市，就记录一次相遇。只比较每天的位置，途中交叉不计。
+              每天记录一次位置。同一天在同一条街、相距不超过 50
+              米，才算一次相遇。
             </p>
           </div>
         </div>

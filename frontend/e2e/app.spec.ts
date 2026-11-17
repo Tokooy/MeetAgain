@@ -52,9 +52,32 @@ test("map, simulation, playback, filtering, download and reset work through real
     "2026-11-16",
   );
   await page.getByRole("button", { name: /行为参数/ }).click();
+  await expect(page.getByLabel("同行人数")).toHaveValue("2");
+  await page.getByLabel("个体 01 的家乡").selectOption("320100");
+  await page.getByLabel("个体 01 的毕业后去向").selectOption("321100");
+  await page.getByLabel("个体 02 的家乡").selectOption("321000");
+  await page.getByLabel("个体 02 的毕业后去向").selectOption("320100");
   const run = page.waitForResponse("**/api/simulations");
   await page.getByRole("button", { name: "开始模拟" }).click();
-  const { summary } = await (await run).json();
+  const response = await run;
+  expect(response.status()).toBe(201);
+  const { summary, agents } = await response.json();
+  expect(agents[0]).toMatchObject({
+    home_city_id: "320100",
+    graduation_city_id: "321100",
+  });
+  expect(agents[1]).toMatchObject({
+    home_city_id: "321000",
+    graduation_city_id: "320100",
+  });
+  expect(
+    agents[0].trajectory.slice(0, 2).map((p: { city_id: string }) => p.city_id),
+  ).toEqual(["320100", "321100"]);
+  expect(
+    agents[1].trajectory.slice(0, 2).map((p: { city_id: string }) => p.city_id),
+  ).toEqual(["321000", "320100"]);
+  expect(agents[0].trajectory[1].coordinates).toHaveLength(2);
+  expect(agents[0].trajectory[1].street_id).toBeGreaterThan(0);
   await expect(page.getByTestId("pair-count")).toHaveText(
     `${summary.unique_encounter_pairs}对`,
   );
@@ -83,7 +106,7 @@ test("map, simulation, playback, filtering, download and reset work through real
   for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
   const result = JSON.parse(Buffer.concat(chunks).toString());
   expect(result.encounters.length).toBe(summary.encounter_event_count);
-  expect(result.agents.length).toBe(20);
+  expect(result.agents.length).toBe(2);
   expect(result.agents[0].trajectory.length).toBe(366);
   await page.locator(".results").evaluate((e) => {
     e.scrollTop = 0;
@@ -147,6 +170,9 @@ test("mobile layout collapses, respects reduced motion and has no horizontal ove
   await page.getByLabel("观察时长", { exact: true }).fill("5300");
 
   await page.getByLabel("所有人从同一座家乡城市出发").check();
+  await page.getByLabel("共同家乡").selectOption("321100");
+  await page.getByText("设置其余 2 人").click();
+  await page.getByLabel("个体 03 的毕业后去向").selectOption("320100");
   await page.getByLabel("分开日期（旅程编号）").fill("2027-01-01");
   const simulation = page.waitForResponse("**/api/simulations");
   await page.getByRole("button", { name: "开始模拟" }).click();
@@ -160,12 +186,9 @@ test("mobile layout collapses, respects reduced motion and has no horizontal ove
     start_date: "2027-01-01",
   });
   expect(
-    new Set(
-      result.agents.map(
-        (agent: { home_city_id: string }) => agent.home_city_id,
-      ),
-    ).size,
-  ).toBe(1);
+    result.agents.map((agent: { home_city_id: string }) => agent.home_city_id),
+  ).toEqual(Array(4).fill("321100"));
+  expect(result.agents[2].trajectory[1].city_id).toBe("320100");
   await expect(page.getByLabel("当前天数", { exact: true })).toHaveAttribute(
     "max",
     "5300",

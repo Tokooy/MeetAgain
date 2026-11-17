@@ -30,12 +30,17 @@ export interface Graph {
     road_model: string;
   };
 }
+export interface ParticipantCities {
+  home_city_id?: string;
+  graduation_city_id?: string;
+}
 export interface Config {
   agents: number;
   ticks: number;
   seed?: string;
   same_hometown?: boolean;
   start_date?: string | null;
+  participants?: ParticipantCities[];
   movement: {
     home_move_probability: number;
     away_move_probability: number;
@@ -46,11 +51,16 @@ export interface Config {
 export interface Position {
   tick: number;
   city_id: string;
+  street_id: number;
+  osm_way_id: number;
+  street_name: string | null;
+  coordinates: [number, number];
 }
 export interface Agent {
   id: number;
   home_city_id: string;
   initial_city_id: string;
+  graduation_city_id: string | null;
   final_city_id: string;
   move_count: number;
   distance_km: number;
@@ -75,6 +85,9 @@ export interface Simulation {
 export interface Encounter {
   tick: number;
   city_id: string;
+  street_id: number;
+  street_name: string | null;
+  distance_m: number;
   agent_ids: [number, number];
 }
 export interface EncounterPage {
